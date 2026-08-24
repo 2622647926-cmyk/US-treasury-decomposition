@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美债拆解与分析交互看板</title>
+    <!-- Tailwind CSS: 本地离线版 (若本地不存在则自动回退至 CDN) -->
+    <script src="tailwind.min.js" onerror="this.onerror=null; this.src='https://cdn.tailwindcss.com';"></script>
+    <!-- ECharts.js: 本地离线版 (若本地不存在则自动回退至 CDN) -->
+    <script src="echarts.min.js" onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';"></script>
+    <!-- Lucide Icons: 本地离线版 (若本地不存在则自动回退至 CDN) -->
+    <script src="lucide.min.js" onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js';"></script>
+    <!-- 动态数据集插槽：数据由 Python 自动内嵌，确保单个 HTML 文件可完全独立便携分享 -->
+    <script src="data.js"></script>
+    <script>
+        // 配置 Tailwind CSS 自定义浅色主题配色
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#F8FAFC',      // 看板背景：浅白灰色 (Slate 50)
+                        cardBg: '#FFFFFF',      // 卡片背景：纯白色
+                        textColor: '#1E293B',  // 文字主色：深灰蓝色 (Slate 800)
+                        accentBlue: '#2563EB',  // 亮蓝色
+                        accentGreen: '#059669', // 墨绿色
+                        accentOrange: '#D97706' // 琥珀橙
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 针对白天模式的滚动条样式优化 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F1F5F9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
+    </style>
+</head>
+<body class="bg-darkBg text-textColor min-h-screen flex flex-col font-sans">
+
+    <!-- 顶部导航栏 -->
+    <header class="border-b border-slate-200 bg-white px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
+        <div>
+            <div class="flex items-center gap-2">
+                <i data-lucide="line-chart" class="text-accentBlue h-6 w-6"></i>
+                <h1 class="text-xl font-bold text-slate-900 tracking-wide">美债拆解与分析交互看板</h1>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">基于 FRED 收益率分解与年底联邦基金期货加权预期计算 (完全离线白日版)</p>
+        </div>
+        <div class="text-left sm:text-right">
+            <span class="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-200">
+                <span class="h-2 w-2 rounded-full bg-accentGreen animate-pulse"></span>
+                自动更新时间：<span id="update-time">-</span>
+            </span>
+        </div>
+    </header>
+
+    <!-- 主体图表容器 -->
+    <main class="flex-grow p-6 space-y-8 max-w-7xl mx-auto w-full">
+
+        <!-- ==================== 顶部核心数据指标卡片区 (包含 DoDs & WoWs 变动幅度指示) ==================== -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            
+            <!-- 卡片 1：年底政策基准利率与降息预期 -->
+            <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-3 text-slate-100">
+                    <i data-lucide="calculator" class="h-14 w-14"></i>
+                </div>
+                <p class="text-xs text-slate-400 font-semibold tracking-wider">当年12月FF期货预期变动 / 利率中枢</p>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span id="metric-weighted-change" class="text-3xl font-extrabold text-slate-900">-</span>
+                    <span class="text-sm font-semibold text-slate-500">bp</span>
+                </div>
+                <div class="mt-3 text-[10px] text-slate-500 border-t border-slate-50 pt-2 flex flex-col gap-1">
+                    <div>基准中枢: <span id="metric-fed-mid" class="font-bold text-slate-700">-</span> | 合约: <span id="metric-futures-contract" class="font-mono text-slate-700">-</span></div>
+                    <div id="metric-futures-change" class="text-slate-400">-</div>
+                </div>
+            </div>
+
+            <!-- 卡片 2：美债名义收益率对比 (2Y vs 10Y) -->
+            <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-3 text-slate-100">
+                    <i data-lucide="trending-up" class="h-14 w-14"></i>
+                </div>
+                <p class="text-xs text-slate-400 font-semibold tracking-wider">国债名义收益率对比 (2Y vs 10Y)</p>
+                <div class="mt-2 flex items-baseline gap-4">
+                    <div>
+                        <span class="text-xs text-slate-400 block">2Y 名义:</span>
+                        <span id="metric-nom-2y" class="text-2xl font-extrabold text-slate-900">-</span>
+                        <span class="text-xs text-slate-400">%</span>
+                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-nom-2y-change">-</div>
+                    </div>
+                    <div class="border-l border-slate-200 pl-4">
+                        <span class="text-xs text-slate-400 block">10Y 名义:</span>
+                        <span id="metric-nom-10y" class="text-2xl font-extrabold text-slate-900">-</span>
+                        <span class="text-xs text-slate-400">%</span>
+                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-nom-10y-change">-</div>
+                    </div>
+                </div>
+                <div class="mt-3 text-[10px] text-slate-500 border-t border-slate-200 pt-2 flex justify-between items-center font-sans">
+                    <span>10Y-2Y利差: <span id="metric-spread-10y2y" class="font-bold text-slate-700">-</span></span>
+                    <span id="metric-spread-10y2y-change" class="text-[9px]">-</span>
+                </div>
+            </div>
+
+            <!-- 卡片 3：10Y 实际与通胀预期 (TIPS vs BEI) -->
+            <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-3 text-slate-100">
+                    <i data-lucide="activity" class="h-14 w-14"></i>
+                </div>
+                <p class="text-xs text-slate-400 font-semibold tracking-wider">10Y 实际利率 (TIPS) vs 通胀 BEI</p>
+                <div class="mt-2 flex items-baseline gap-4">
+                    <div>
+                        <span class="text-xs text-slate-400 block">10Y TIPS 实际:</span>
+                        <span id="metric-real-10y" class="text-2xl font-extrabold text-slate-900">-</span>
+                        <span class="text-xs text-slate-400">%</span>
+                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-real-10y-change">-</div>
+                    </div>
+                    <div class="border-l border-slate-200 pl-4">
+                        <span class="text-xs text-slate-400 block">10Y BEI 通胀:</span>
+                        <span id="metric-bei-10y" class="text-2xl font-extrabold text-slate-900">-</span>
+                        <span class="text-xs text-slate-400">%</span>
+                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-bei-10y-change">-</div>
+                    </div>
+                </div>
+                <div class="mt-3 text-[10px] text-slate-500 border-t border-slate-200 pt-2 flex justify-between items-center font-sans">
+                    <span>联储长端信誉 (fwd 5Y5Y): <span id="metric-anchor-infl" class="font-bold text-slate-700">-</span></span>
+                    <span id="metric-anchor-infl-change" class="text-[9px]">-</span>
+                </div>
+            </div>
+
+            <!-- 卡片 4：10Y ACM 期望与期限溢价 (Expected vs TP，已升级为 NY Fed ACM 日度更新版) -->
+            <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-3 text-slate-100">
+                    <i data-lucide="shield-alert" class="h-14 w-14"></i>
+                </div>
+                <p class="text-xs text-slate-400 font-semibold tracking-wider">10Y ACM 期望利率 vs 期限溢价 (TP)</p>
+                <div class="mt-2 flex items-baseline gap-4">
+                    <div>
+                        <span class="text-xs text-slate-400 block">Expected 期望:</span>
+                        <span id="metric-exp-10y" class="text-2xl font-extrabold text-slate-900">-</span>
+                        <span class="text-xs text-slate-400">%</span>
+                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-exp-10y-change">-</div>
+                    </div>
+                    <div class="border-l border-slate-200 pl-4">
+                        <span class="text-xs text-slate-400 block">TP 期限溢价:</span>
+                        <span id="metric-tp-10y" class="text-2xl font-extrabold text-slate-900">-</span>
+                        <span class="text-xs text-slate-400">%</span>
+                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-tp-10y-change">-</div>
+                    </div>
+                </div>
+                <div class="mt-3 text-[10px] text-slate-500 border-t border-slate-200 pt-2 flex justify-between items-center font-sans">
+                    <span>最新零息名义 ACM: <span id="metric-nom-kw" class="font-bold text-slate-700">-</span></span>
+                    <span id="metric-nom-kw-change" class="text-[9px]">-</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 新增：美债逻辑思考流与归因诊断面板 (Attribution Diagnostics Panel) ==================== -->
+        <section class="bg-cardBg border border-slate-200 rounded-xl p-6 shadow-sm">
+            <div class="border-l-4 border-accentBlue pl-3 mb-5">
+                <h2 class="text-base font-bold text-slate-900">美债波动逻辑思考流与归因诊断面板 (Dynamic Attribution Diagnostics)</h2>
+                <p class="text-xs text-slate-500 mt-1">根据您的研究思考流决策树，动态计算任意区间内各因子的变动贡献占比，并自动出具宏观因果归因诊断报告。</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- 左侧：思考流可视化决策树图 (HTML/CSS实现) -->
+                <div class="lg:col-span-5 border border-slate-100 rounded-lg p-4 bg-slate-50 text-[11px] space-y-3">
+                    <p class="font-bold text-slate-700 text-xs border-b border-slate-200 pb-1.5 flex items-center gap-1">
+                        <i data-lucide="git-fork" class="text-accentBlue h-4 w-4"></i> 美债名义收益率动能剖析决策流
+                    </p>
+                    <div class="relative pl-3 border-l-2 border-slate-300 space-y-4">
+                        <div>
+                            <span class="bg-slate-200 text-slate-800 px-2 py-0.5 rounded font-bold font-mono">10Y Nominal 收益率异动</span>
+                            <div class="text-slate-400 mt-1">分流判断：名义变化由谁主导？</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-white border border-slate-200 rounded p-2 shadow-xs">
+                                <span class="text-accentGreen font-bold block">A. 通胀预期主导 (BEI)</span>
+                                <span class="text-slate-400 text-[10px]">继续下钻判断：</span>
+                                <span class="block text-slate-500 mt-1">评估 <b>5Y5Y 远期通胀预期</b> 是否发生同向变动（区分长端通胀预期中枢偏移，与短端近端商品供给冲击）。</span>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="bg-white border border-slate-200 rounded p-2 shadow-xs">
+                                    <span class="text-accentBlue font-bold block">B. 实际利率主导 (Real)</span>
+                                    <span class="text-slate-400 text-[10px]">继续下钻判断：</span>
+                                    <span class="block text-slate-500 mt-1">结合 <b>10Y-2Y 利差</b> 变化。若是<b>短端</b>主导分析远期短期利率（1Y1Y, 2Y1Y），若是<b>长端</b>主导看 <b>5Y5Y 实际利率锚</b>。</span>
+                                </div>
+                                <div class="bg-purple-50 border border-purple-200 rounded p-2 text-[10px]">
+                                    <span class="text-purple-800 font-bold block flex items-center gap-1">
+                                        <i data-lucide="shield-alert" class="h-3.5 w-3.5"></i>
+                                        B-2. ACM 期限溢价辅助校准
+                                    </span>
+                                    <span class="text-slate-600 block mt-0.5">
+                                        最终剖析：本次实际利率变动，主要由<b>期限溢价 (ACM TP)</b> 变化主导，还是由<b>期望无风险利率 (ACM Expected)</b> 变化主导？
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：动态归因诊断计算器与报告输出 -->
+                <div class="lg:col-span-7 flex flex-col justify-between space-y-4">
+                    <div class="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
+                        <div class="flex flex-wrap items-center gap-3 text-xs">
+                            <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-slate-700">开始日期:</span>
+                                <input type="date" id="att-start" class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 w-28">
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-slate-700">结束日期:</span>
+                                <input type="date" id="att-end" class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 w-28">
+                            </div>
+                            <button onclick="runAttribution()" class="bg-accentBlue hover:bg-blue-700 text-white font-bold px-3 py-1 rounded transition text-xs flex items-center gap-1 shadow-sm">
+                                <i data-lucide="play" class="h-3 w-3"></i> 开始归因诊断
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-slate-400 text-[11px]">快速预设区间:</span>
+                            <button onclick="setAttributionPreset(30)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded border border-slate-200">过去1个月</button>
+                            <button onclick="setAttributionPreset(90)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded border border-slate-200">过去3个月</button>
+                            <button onclick="setAttributionPreset(365)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded border border-slate-200">今年以来 (近1年)</button>
+                        </div>
+                    </div>
+
+                    <!-- 动态报告输出区域 -->
+                    <div id="att-result" class="min-h-48 flex items-center justify-center border border-dashed border-slate-300 rounded-lg bg-slate-50/50 p-4">
+                        <div class="text-center text-slate-400 text-xs">
+                            <i data-lucide="calculator" class="h-8 w-8 mx-auto mb-2 text-slate-300"></i>
+                            请选择日期或快捷区间，点击“开始归因诊断”生成宏观归因报告
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PART 1: 政策降息预期与中枢 ==================== -->
+        <section class="space-y-4">
+            <div class="border-l-4 border-accentBlue pl-3">
+                <h2 class="text-base font-bold text-slate-900">PART 1: 政策降息预期与中枢</h2>
+                <p class="text-xs text-slate-500 mt-1">分析当年 12 月联邦基金期货加权降息预期 (bp) 与美联储目标中枢的偏离度，反映市场对联储转向降息周期的预期幅度和定价轨迹。</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- 图1：当年12月加权降息预期历史走势 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm lg:col-span-2">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="calendar" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 1：当年 12 月加权降息预期 (左轴-bp) 与基准利率中枢 (右轴-%) 对齐走势
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-futures" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-futures" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-futures-change" class="h-80 w-full"></div>
+                </div>
+
+                <!-- 降息测算背景及原理卡片 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+                            <i data-lucide="info" class="text-accentBlue h-4 w-4"></i>
+                            年底降息预期测算原理
+                        </h4>
+                        <ul class="text-[11px] text-slate-500 space-y-2 leading-relaxed">
+                            <li><strong>加权降息预期公式</strong>：<br>
+                                <code class="text-accentBlue font-mono block bg-slate-50 p-1.5 rounded my-1">bp = ((100 - 期货价格) - 当前基准中枢) * 100</code>
+                            </li>
+                            <li><strong>指标含义</strong>：通过当年 12 月到期的联邦基金期货主力合约，测算市场对年底政策利率的加权终值预期。</li>
+                            <li><strong>双轴设计</strong>：左轴对应累计预期变动幅度 (bp)，右轴为实际已落地的基准中枢 (%) 阶梯轴，直接对齐预期与落地的背离。</li>
+                        </ul>
+                    </div>
+                    <div class="border-t border-slate-100 pt-3 text-[11px] text-slate-400">
+                        注：期货价格来源于雅虎财经 ZQZ 合约的历史收盘价格序列。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PART 2: 收益率曲线形态与期限利差 ==================== -->
+        <section class="space-y-4">
+            <div class="border-l-4 border-accentBlue pl-3">
+                <h2 class="text-base font-bold text-slate-900">PART 2: 收益率曲线形态与期限利差</h2>
+                <p class="text-xs text-slate-500 mt-1">剖析收益率曲线在截面上的陡峭/倒挂形态，与时间序列上的经典期限利差，多维分析经济衰退压力及倒挂修复路径。</p>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 图2：收益率曲线截面形态图 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <i data-lucide="eye" class="text-accentBlue h-4.5 w-4.5"></i>
+                                图 2：收益率曲线截面折线形态 (3M -> 30Y)
+                            </h3>
+                            <span id="snapshot-date" class="text-xs font-mono text-accentBlue bg-blue-50 px-2 py-0.5 rounded border border-blue-200">-</span>
+                        </div>
+                        <div id="chart-yield-curve" class="h-80 w-full"></div>
+                    </div>
+                    <div class="mt-4 border-t border-slate-100 pt-4">
+                        <div class="flex items-center justify-between gap-4">
+                            <div class="flex items-center gap-2">
+                                <button id="btn-play-pause" class="bg-slate-100 hover:bg-slate-200 text-slate-800 rounded p-1.5 transition border border-slate-300 flex items-center justify-center">
+                                    <i data-lucide="play" id="icon-play" class="h-4 w-4"></i>
+                                </button>
+                                <span class="text-xs text-slate-500 whitespace-nowrap">时间旅行</span>
+                            </div>
+                            <input type="range" id="slider-time-travel" class="w-full accent-accentBlue h-1.5 rounded-lg cursor-pointer bg-slate-200" min="0" max="0" value="0">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 图3：期限利差历史走势 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="git-branch" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 3: 10Y名义美债收益率与各期限利差历史走势 (联动图2)
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-spreads" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-spreads" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-spreads" class="h-80 w-full"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PART 3: 远期美债利率预期路径 ==================== -->
+        <section class="space-y-4">
+            <div class="border-l-4 border-accentBlue pl-3">
+                <h2 class="text-base font-bold text-slate-900">PART 3: 远期美债利率预期路径</h2>
+                <p class="text-xs text-slate-500 mt-1">评估远期收益率走势（1Y1Y, 2Y1Y 为近端政策预期，5Y5Y, 10Y10Y 为长期中枢回报），并提供偏离度 Z-score 测量长端定价的扭曲风险。</p>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 图4：远期利率走势 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="trending-up" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 4：远期美债利率走势 (1Y1Y, 2Y1Y, 5Y5Y, 10Y10Y)
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-forwards" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-forwards" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-forwards-path" class="h-80 w-full"></div>
+                </div>
+
+                <!-- 图5：偏离度 Z-score (包含滚动与全样本 Z-score 刻画) -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="percent" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 5：滚动 252 天 Z-score (偏离异动) vs 全历史样本 Z-score (绝对历史偏离度)
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-zscore" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-zscore" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-forwards-zscore" class="h-80 w-full"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PART 4: 名义利率的通胀拆解 ==================== -->
+        <section class="space-y-4">
+            <div class="border-l-4 border-accentBlue pl-3">
+                <h2 class="text-base font-bold text-slate-900">PART 4: 名义利率的通胀拆解 (Nominal = Real + BEI)</h2>
+                <p class="text-xs text-slate-500 mt-1">对比 5 年期与 10 年期的名义、实际 TIPS 和盈亏通胀 BEI，同时配合 5Y5Y 远期长期预期锚（实际利率锚与远期通胀），用以捕捉市场的通胀失锚程度与长期增长回报定价。</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 图6：5年期拆解 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="compass" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 6：5年期名义利率通胀分解折线图 (5Y名义 = 5Y实际 + 5Y BEI)
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-inf5y" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-inf5y" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-inf-dec-5y" class="h-80 w-full"></div>
+                </div>
+
+                <!-- 图7：10年期拆解 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="globe" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 7：10年期名义利率通胀分解折线图 (10Y名义 = 10Y实际 + 10Y BEI)
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-inf10y" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-inf10y" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-inf-dec-10y" class="h-80 w-full"></div>
+                </div>
+            </div>
+
+            <!-- 图8：5Y5Y预期长期锚点折线走势 -->
+            <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                    <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <i data-lucide="anchor" class="text-accentBlue h-4.5 w-4.5"></i>
+                        图 8：5Y5Y 远期实际利率锚 (实体长期中枢) 与远期通胀预期 (联储信誉锚) 折线走势
+                    </h3>
+                    <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                        <span>区间:</span>
+                        <input type="date" id="start-anchor" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        <span>至</span>
+                        <input type="date" id="end-anchor" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                    </div>
+                </div>
+                <div id="chart-anchor-5y5y" class="h-80 w-full"></div>
+            </div>
+        </section>
+
+        <!-- ==================== PART 5: 名义利率期限溢价拆解 ==================== -->
+        <section class="space-y-4">
+            <div class="border-l-4 border-accentBlue pl-3">
+                <h2 class="text-base font-bold text-slate-900">PART 5: 名义利率期限溢价拆解 (Nominal = Future Short Expected Rate + Term Premium)</h2>
+                <p class="text-xs text-slate-500 mt-1">运用 NY Fed ACM 期限溢价模型，将 10 年期无风险利率分解为期望短期路径与期限溢价（TP），并对齐避险资产黄金，判断避险情绪与供给压力的变化。</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- 图9：10年期无风险期望与期限溢价分解 (双Y轴设计，ACM TP展示在右轴) -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm lg:col-span-2">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="component" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 9：10年期零息无风险名义与期望利率 (左轴-%) vs ACM 期限溢价 (右轴-%) 折线分解
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-risk" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-risk" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-risk-dec" class="h-80 w-full"></div>
+                </div>
+
+                <!-- 期限溢价分析卡片 -->
+                <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+                            <i data-lucide="shield-alert" class="text-accentBlue h-4 w-4"></i>
+                            期限溢价 (TP) 的金融逻辑
+                        </h4>
+                        <p class="text-[11px] text-slate-500 leading-relaxed">
+                            <strong>期限溢价 (Term Premium)</strong> 反映投资者锁定长端资产所承受的不确定性风险补偿。<br><br>
+                            本系统专注于展示纽约联储发布的 <strong>Adrian-Crump-Moench (ACM) 期限溢价模型</strong>（日频更新）。通常，期限溢价快速拉升时对应美债财政发债赤字供给扩张，或通胀前景出现大幅震荡；期限溢价进入负值或大幅走低，则反映避险资金流入美债“避风港”（Safe Haven Demand）。
+                        </p>
+                    </div>
+                    <div class="border-t border-slate-100 pt-3 text-[11px] text-slate-400">
+                        分解公式：THREEFY10 = Expected (左轴) + ACM Term Premium (右轴)
+                    </div>
+                </div>
+            </div>
+
+            <!-- 图10：2Y名义(倒序轴-右轴1) + 10Y ACM TP(正序轴-左轴) vs 黄金价格(正序轴-右轴) -->
+            <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                    <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <i data-lucide="dollar-sign" class="text-accentBlue h-4.5 w-4.5"></i>
+                        图 10：2Y名义国债收益率(右轴1-逆序轴%) 与 10Y ACM 期限溢价(左轴-%) vs 黄金价格(右轴-美元) 对照走势
+                    </h3>
+                    <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                        <span>区间:</span>
+                        <input type="date" id="start-gold" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        <span>至</span>
+                        <input type="date" id="end-gold" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                    </div>
+                </div>
+                <div id="chart-tp-vs-gold" class="h-[450px] w-full"></div>
+            </div>
+        </section>
+
+        <!-- 开发者与自定义配置面板 -->
+        <section class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <button id="btn-toggle-dev" class="w-full px-5 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition text-left border-b border-slate-200">
+                <span class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <i data-lucide="code" class="text-accentBlue h-4.5 w-4.5"></i>
+                    开发者与自定义配置面板 (如果您想在未来增加新图表，请点击展开)
+                </span>
+                <i data-lucide="chevron-down" id="icon-chevron" class="h-4.5 w-4.5 text-slate-500 transition-transform"></i>
+            </button>
+            <div id="panel-dev-guide" class="hidden px-5 py-5 space-y-4 text-xs text-slate-600 leading-relaxed bg-slate-50">
+                <p>本看板的数据与呈现完全分离。所有数据在页面加载时会下载并自动缓存至全局变量 <code class="text-accentBlue bg-blue-50 px-1.5 py-0.5 rounded font-mono">window.chartData</code> 中。</p>
+                <div class="space-y-2">
+                    <h3 class="font-bold text-slate-800 text-xs">如何自己动手（或在未来找 AI 帮您）添加一张新图表？</h3>
+                    <p class="font-semibold">第一步：在 HTML 代码的图表网格段落中，添加一个新的图表容器：</p>
+                    <pre class="bg-slate-100 text-slate-800 p-3 rounded font-mono select-all overflow-x-auto border border-slate-200">&lt;div id="my-new-chart-container" class="h-80 w-full"&gt;&lt;/div&gt;</pre>
+                    <p class="font-semibold mt-2">第二步：在最底部 script 代码中的配置区，调用一键助手初始化函数：</p>
+                    <pre class="bg-slate-100 text-slate-800 p-3 rounded font-mono select-all overflow-x-auto border border-slate-200">createLineChart('my-new-chart-container', '图表名称', ['折线A', '折线B'], ['data_key_a', 'data_key_b']);</pre>
+                </div>
+                <p class="text-[11px] text-slate-500">注：图标使用 Lucide 矢量图标，要更换指标图标只需在 HTML 标签中将 <code class="font-mono">data-lucide="line-chart"</code> 替换为库中的 any 其它名字即可，网页在本地无需配置打包器直接运行。</p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 底部版权栏 -->
+    <footer class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 mt-6 shadow-inner">
+        <div>美债拆解与分析看板 &copy; 2026 | 数据源自 FRED & Yahoo Finance CME Futures</div>
+    </footer>
+
+    <!-- 图表渲染与联动交互控制 JS 脚本 -->
+    <script>
+        // 在页面载入时渲染矢量图标
+        lucide.createIcons();
+
+        // 定义图例色号配色方案
+        const CHART_COLORS = {
+            nom10y: '#EF4444',      // 红色 (10Y名义)
+            real10y: '#3B82F6',     // 蓝色 (TIPS实际)
+            bei10y: '#10B981',      // 绿色 (BEI通胀预期)
+            exp10y: '#F59E0B',      // 橙黄色 (预期期望利率)
+            tp10y: '#8B5CF6',       // 紫色 (期限溢价)
+            gold: '#B45309',        // 深金黄色
+            curveLatest: '#334155',  // 钢灰色 (图2最新截面曲线)
+            curve1w: '#94A3B8',      // 浅灰
+            curve1m: '#64748B',      // 中灰
+            curve1y: '#475569',      // 暗灰
+            fwd1y1y: '#06B6D4',      // 青色
+            fwd2y1y: '#0EA5E9',      // 天蓝色
+            fwd5y5y: '#2563EB',      // 普鲁士蓝
+            fwd10y10y: '#1D4ED8',    // 深蓝色
+            zscore: '#EC4899',       // 亮滚动 Z-score (粉色)
+            zscoreFull: '#D97706',   // 历史全样本 Z-score (橙色)
+            fwdReal: '#14B8A6',      // 湖绿色
+            fwdInfl: '#A855F7'       // 紫红色
+        };
+
+        // 绑定常用 DOM 指标显示变量
+        const updateTimeEl = document.getElementById('update-time');
+        const metricWeightedChangeEl = document.getElementById('metric-weighted-change');
+        const metricFuturesContractEl = document.getElementById('metric-futures-contract');
+        const metricNom10yEl = document.getElementById('metric-nom-10y');
+        const metricReal10yEl = document.getElementById('metric-real-10y');
+        const metricBei10yEl = document.getElementById('metric-bei-10y');
+        const metricTp10yEl = document.getElementById('metric-tp-10y');
+        const metricExp10yEl = document.getElementById('metric-exp-10y');
+        const metricFedMidEl = document.getElementById('metric-fed-mid');
+        const snapshotDateEl = document.getElementById('snapshot-date');
+        const sliderTimeTravel = document.getElementById('slider-time-travel');
+        const btnPlayPause = document.getElementById('btn-play-pause');
+        const iconPlay = document.getElementById('icon-play');
+        const btnToggleDev = document.getElementById('btn-toggle-dev');
+        const panelDevGuide = document.getElementById('panel-dev-guide');
+        const iconChevron = document.getElementById('icon-chevron');
+
+        // 全局共享数据集与状态变量
+        let dashboardData = null;
+        let historyArray = [];          // 原始完整历史数组
+        let totalRecords = 0;           // 历史数据行数
+        let playInterval = null;
+        let isPlaying = false;
+
+        // 声明全部 10 个图表 ECharts 实例变量
+        let yieldCurveChart = null;     // 图2：曲线截面
+        let spreadsChart = null;        // 图3：利差走势与水平
+        let forwardsPathChart = null;   // 图4：远期预期路径
+        let forwardsZscoreChart = null; // 图5：偏离度 Z-score
+        let infDec5yChart = null;       // 图6：5Y通胀拆解
+        let infDec10yChart = null;      // 图7：10Y通胀拆解
+        let anchor5y5yChart = null;     // 图8：5Y5Y预期锚
+        let riskDecChart = null;        // 图9：ACM 风险拆解
+        let futuresChangeChart = null;  // 图1：政策降息预期
+        let tpVsGoldChart = null;       // 图10：期限溢价 vs 黄金价格
+
+        // 映射图例 ID 以便做独立的日期筛选配置
+        const chartIds = [
+            'futures', 'spreads', 'forwards', 'zscore', 
+            'inf5y', 'inf10y', 'anchor', 'risk', 'gold'
+        ];
+
+        // 格式化与昨日(DoD)/上周(WoW)的变动幅度 (bp)，增加红(涨)/绿(跌)色彩
+        function getChangeHtml(dodVal, wowVal) {
+            if (dodVal === null || wowVal === null || dodVal === undefined || wowVal === undefined) {
+                return 'DoD: - | WoW: -';
+            }
+            const sign1 = dodVal >= 0 ? '+' : '';
+            const sign5 = wowVal >= 0 ? '+' : '';
+            
+            const color1 = dodVal >= 0 ? 'text-red-500 font-semibold' : 'text-emerald-500 font-semibold';
+            const color5 = wowVal >= 0 ? 'text-red-500 font-semibold' : 'text-emerald-500 font-semibold';
+            
+            return `DoD: <span class="${color1}">${sign1}${dodVal.toFixed(1)} bp</span> | WoW: <span class="${color5}">${sign5}${wowVal.toFixed(1)} bp</span>`;
+        }
+
+        // 直接从全局变量 window.chartData 中解析数据，彻底绕过浏览器的 file:// 协议 CORS 本地安全限制
+        if (window.chartData) {
+            const data = window.chartData;
+            dashboardData = data;
+            historyArray = data.history;
+            totalRecords = historyArray.length;
+            
+            // 顶部卡片数据更新
+            updateTimeEl.innerText = data.update_time;
+            metricWeightedChangeEl.innerText = (data.weighted_change_bp >= 0 ? '+' : '') + data.weighted_change_bp;
+            metricFuturesContractEl.innerText = data.futures_contract;
+            metricFedMidEl.innerText = data.target_midpoint.toFixed(3) + "%";
+
+            // 直接读取最新一个交易日的数据行及变动
+            const latest = historyArray[totalRecords - 1];
+
+            // 1. 卡片 1 (年底期货预期变动 DoDs/WoWs)
+            document.getElementById('metric-futures-change').innerHTML = getChangeHtml(latest.weighted_change_history_bp_dod, latest.weighted_change_history_bp_wow);
+
+            // 2. 卡片 2 (2Y & 10Y 名义收益率 + 利差变动)
+            metricNom10yEl.innerText = latest.dgs_10y ? latest.dgs_10y.toFixed(2) : '-';
+            document.getElementById('metric-nom-10y-change').innerHTML = getChangeHtml(latest.dgs_10y_dod, latest.dgs_10y_wow);
+            
+            document.getElementById('metric-nom-2y').innerText = latest.dgs_2y ? latest.dgs_2y.toFixed(2) : '-';
+            document.getElementById('metric-nom-2y-change').innerHTML = getChangeHtml(latest.dgs_2y_dod, latest.dgs_2y_wow);
+            
+            document.getElementById('metric-spread-10y2y').innerText = latest.spread_10y_2y ? (latest.spread_10y_2y * 100).toFixed(0) + " bp" : '-';
+            document.getElementById('metric-spread-10y2y-change').innerHTML = getChangeHtml(latest.spread_10y_2y_dod, latest.spread_10y_2y_wow);
+
+            // 3. 卡片 3 (10Y 实际 TIPS & BEI 通胀预期 + 5Y5Y 锚变动)
+            metricReal10yEl.innerText = latest.real_10y ? latest.real_10y.toFixed(2) : '-';
+            document.getElementById('metric-real-10y-change').innerHTML = getChangeHtml(latest.real_10y_dod, latest.real_10y_wow);
+            
+            metricBei10yEl.innerText = latest.bei_10y ? latest.bei_10y.toFixed(2) : '-';
+            document.getElementById('metric-bei-10y-change').innerHTML = getChangeHtml(latest.bei_10y_dod, latest.bei_10y_wow);
+            
+            document.getElementById('metric-anchor-infl').innerText = latest.fwd_5y5y_infl ? latest.fwd_5y5y_infl.toFixed(2) + "%" : '-';
+            document.getElementById('metric-anchor-infl-change').innerHTML = getChangeHtml(latest.fwd_5y5y_infl_dod, latest.fwd_5y5y_infl_wow);
+
+            // 4. 卡片 4 (ACM 期望 & ACM 期限溢价)
+            metricTp10yEl.innerText = latest.acm_tp_10y ? latest.acm_tp_10y.toFixed(2) : '-';
+            document.getElementById('metric-tp-10y-change').innerHTML = getChangeHtml(latest.acm_tp_10y_dod, latest.acm_tp_10y_wow);
+            
+            metricExp10yEl.innerText = latest.acm_exp_10y ? latest.acm_exp_10y.toFixed(2) : '-';
+            document.getElementById('metric-exp-10y-change').innerHTML = getChangeHtml(latest.acm_exp_10y_dod, latest.acm_exp_10y_wow);
+            
+            document.getElementById('metric-nom-kw').innerText = latest.acm_nom_10y ? latest.acm_nom_10y.toFixed(2) + "%" : '-';
+            document.getElementById('metric-nom-kw-change').innerHTML = getChangeHtml(latest.acm_nom_10y_dod, latest.acm_nom_10y_wow);
+
+            // 初始化每一个独立图表的日期选择输入框
+            chartIds.forEach(id => {
+                const startInput = document.getElementById(`start-${id}`);
+                const endInput = document.getElementById(`end-${id}`);
+                
+                // 设置历史边界的最值，限制用户输入合法性
+                startInput.value = historyArray[0].Date_str;
+                startInput.end = historyArray[totalRecords - 1].Date_str;
+                startInput.min = historyArray[0].Date_str;
+                startInput.max = historyArray[totalRecords - 1].Date_str;
+
+                endInput.value = historyArray[totalRecords - 1].Date_str;
+                endInput.min = historyArray[0].Date_str;
+                endInput.max = historyArray[totalRecords - 1].Date_str;
+            });
+
+            // 初始化归因面板的输入框日期
+            const attStartInput = document.getElementById('att-start');
+            const attEndInput = document.getElementById('att-end');
+            attStartInput.value = historyArray[Math.max(0, totalRecords - 66)].Date_str; // 默认前3个月左右
+            attStartInput.min = historyArray[0].Date_str;
+            attStartInput.max = historyArray[totalRecords - 1].Date_str;
+            
+            attEndInput.value = historyArray[totalRecords - 1].Date_str;
+            attEndInput.min = historyArray[0].Date_str;
+            attEndInput.max = historyArray[totalRecords - 1].Date_str;
+
+            // 设置时间旅行滑块的步数
+            sliderTimeTravel.max = totalRecords - 1;
+            sliderTimeTravel.value = totalRecords - 1;
+            snapshotDateEl.innerText = latest.Date_str;
+
+            // 首次全部渲染
+            initAllCharts();
+            
+            // 首次跑一下归因诊断计算
+            runAttribution();
+            
+            // 绑定监听器
+            setupListeners();
+        } else {
+            console.error("未找到 window.chartData，请确保同目录下已生成 data.js 且成功载入。");
+            alert("未找到本地美债数据。请先执行 fetch_data.py 获取最新数据并生成 data.js 缓存。");
+        }
+
+        // ==================== 思考流归因诊断动态计算核心算法 ====================
+        function runAttribution() {
+            const sDate = document.getElementById('att-start').value;
+            const eDate = document.getElementById('att-end').value;
+            
+            const rStart = historyArray.find(r => r.Date_str >= sDate);
+            const rEnd = [...historyArray].reverse().find(r => r.Date_str <= eDate);
+            
+            if (!rStart || !rEnd) {
+                document.getElementById('att-result').innerHTML = "<p class='text-red-500 text-xs font-semibold'>未找到指定日期的数据，请检查日期范围！</p>";
+                return;
+            }
+            
+            // 计算主要指标的基点变动 (由小数% 乘以 100 转化为 bp)
+            const dNom10y = (rEnd.dgs_10y - rStart.dgs_10y) * 100;
+            const dReal10y = (rEnd.real_10y - rStart.real_10y) * 100;
+            const dBei10y = (rEnd.bei_10y - rStart.bei_10y) * 100;
+            
+            const d5y5yBEI = (rEnd.fwd_5y5y_infl - rStart.fwd_5y5y_infl) * 100;
+            const dSpread = (rEnd.spread_10y_2y - rStart.spread_10y_2y) * 100;
+            const d2yNom = (rEnd.dgs_2y - rStart.dgs_2y) * 100;
+            const dfwd1y1y = (rEnd.fwd_1y1y - rStart.fwd_1y1y) * 100;
+            const dfwd5y5yReal = (rEnd.fwd_5y5y_real - rStart.fwd_5y5y_real) * 100;
+            const dACM_TP = (rEnd.acm_tp_10y - rStart.acm_tp_10y) * 100;
+            const dACM_EXP = (rEnd.acm_exp_10y - rStart.acm_exp_10y) * 100;
+            
+            // 归因决策树分析逻辑
+            let primaryDriverText = "";
+            let branchText = "";
+            let acmText = "";
+            
+            const absReal = Math.abs(dReal10y);
+            const absBEI = Math.abs(dBei10y);
+            const totalAbs = absReal + absBEI;
+            
+            // 步骤 1：判断通胀还是实际主导
+            if (absReal > absBEI) {
+                const pct = totalAbs > 0 ? ((absReal / totalAbs) * 100).toFixed(0) : 0;
+                primaryDriverText = `<span class="text-accentBlue font-bold">实际利率（TIPS）的主导波动</span>（10Y实际变动了 ${dReal10y.toFixed(1)} bp，绝对贡献占比为 ${pct}%）`;
+                
+                // 步骤 2：下钻短端还是长端
+                const absShort = Math.abs(dfwd1y1y);
+                const absLong = Math.abs(dfwd5y5yReal);
+                if (absShort > absLong) {
+                    branchText = `实际利率的分流分析显示，变动主要集中在<b>短端利率预期</b>（1Y1Y 远期名义变动了 ${dfwd1y1y.toFixed(1)} bp，变动幅度大于 5Y5Y 实际利率锚的变动）。`;
+                } else {
+                    branchText = `实际利率的分流分析显示，变动主要集中在<b>长端实际利率锚</b>（5Y5Y 远期实际利率变动了 ${dfwd5y5yReal.toFixed(1)} bp，变动幅度大于 1Y1Y 远期名义的变动）。`;
+                }
+            } else {
+                const pct = totalAbs > 0 ? ((absBEI / totalAbs) * 100).toFixed(0) : 0;
+                primaryDriverText = `<span class="text-accentGreen font-bold">盈亏平衡通胀预期（BEI）的主导波动</span>（10Y BEI通胀变动了 ${dBei10y.toFixed(1)} bp，绝对贡献占比为 ${pct}%）`;
+                
+                // 步骤 2：下钻判断通胀信誉锚点
+                if (Math.abs(d5y5yBEI) > 5.0) {
+                    branchText = `通胀预期的分流分析显示，<b>长期远期通胀预期变动较明显</b>（5Y5Y 远期通胀预期变动达 ${d5y5yBEI.toFixed(1)} bp，超出了 5 bp 的安全波动参考限）。`;
+                } else {
+                    branchText = `通胀预期的分流分析显示，<b>长期远期通胀预期基本稳定</b>（5Y5Y 远期通胀预期变动仅为 ${d5y5yBEI.toFixed(1)} bp，处于 5 bp 安全波动参考限内）。`;
+                }
+            }
+            
+            // 步骤 3：结合 ACM 模型检验风险溢价 (Risk Premium) 还是基本面
+            const absTP = Math.abs(dACM_TP);
+            const absEXP = Math.abs(dACM_EXP);
+            if (absTP > absEXP) {
+                acmText = `结合纽约联储 ACM 模型分解：当前<b>期限溢价（ACM TP）变动占支配地位</b>（变动了 ${dACM_TP.toFixed(1)} bp），变动幅值大于期望无风险短期利率的变动（${dACM_EXP.toFixed(1)} bp），期限溢价是驱动无风险零息利率变化的主要分量。`;
+            } else {
+                acmText = `结合纽约联储 ACM 模型分解：当前<b>期望无风险短期利率（ACM Expected Rate）变动占支配地位</b>（变动了 ${dACM_EXP.toFixed(1)} bp），变动幅值大于期限溢价的变动（${dACM_TP.toFixed(1)} bp），期望短期利率路径的变化是驱动无风险零息利率变化的主要分量。`;
+            }
+            
+            // 拼接生成富文本诊断报告
+            const reportHtml = `
+                <div class="bg-blue-50/70 border border-blue-200 rounded-lg p-5 text-xs text-slate-700 leading-relaxed shadow-inner space-y-3.5">
+                    <div class="flex justify-between items-center border-b border-blue-200 pb-2">
+                        <span class="font-extrabold text-blue-900 text-sm flex items-center gap-1">
+                            <i data-lucide="activity" class="h-4 w-4"></i>
+                            归因诊断结论 (${rStart.Date_str} 至 ${rEnd.Date_str})
+                        </span>
+                        <span class="bg-accentBlue text-white font-bold font-mono px-2 py-0.5 rounded text-[10px] shadow-xs">
+                            10Y名义美债变动: ${(dNom10y >= 0 ? '+' : '') + dNom10y.toFixed(1)} bp
+                        </span>
+                    </div>
+                    
+                    <div>
+                        <p class="font-bold text-slate-800 flex items-center gap-1.5"><span class="h-4 w-4 bg-accentBlue text-white rounded-full inline-flex items-center justify-center text-[10px]">1</span> 驱动核心归因拆解：</p>
+                        <p class="mt-1 pl-5 text-slate-600">在此诊断区间内，10Y名义美债的变化主要由 ${primaryDriverText}。</p>
+                    </div>
+
+                    <div>
+                        <p class="font-bold text-slate-800 flex items-center gap-1.5"><span class="h-4 w-4 bg-accentBlue text-white rounded-full inline-flex items-center justify-center text-[10px]">2</span> 期限空间（短端 vs 长端）流向分析：</p>
+                        <p class="mt-1 pl-5 text-slate-600">${branchText}</p>
+                    </div>
+
+                    <div>
+                        <p class="font-bold text-slate-800 flex items-center gap-1.5"><span class="h-4 w-4 bg-accentBlue text-white rounded-full inline-flex items-center justify-center text-[10px]">3</span> ACM 供给与风险溢价交叉校准：</p>
+                        <p class="mt-1 pl-5 text-slate-600">${acmText}</p>
+                    </div>
+
+                    <div class="border-t border-blue-200 pt-3 flex flex-wrap gap-2 text-[10px] text-slate-400 font-mono">
+                        <span>Δ10Y: ${dNom10y.toFixed(1)}bp</span>
+                        <span>| ΔReal: ${dReal10y.toFixed(1)}bp</span>
+                        <span>| ΔBEI: ${dBei10y.toFixed(1)}bp</span>
+                        <span>| Δ5Y5Y_BEI: ${d5y5yBEI.toFixed(1)}bp</span>
+                        <span>| ΔSpread(10-2): ${dSpread.toFixed(1)}bp</span>
+                        <span>| Δ2YNom: ${d2yNom.toFixed(1)}bp</span>
+                        <span>| ΔACM_TP: ${dACM_TP.toFixed(1)}bp</span>
+                        <span>| ΔACM_EXP: ${dACM_EXP.toFixed(1)}bp</span>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('att-result').innerHTML = reportHtml;
+            // 重新在生成的 HTML 内加载一次图标
+            lucide.createIcons();
+        }
+
+        // 归因快速区间设置函数
+        function setAttributionPreset(days) {
+            const latestDate = historyArray[totalRecords - 1].Date_str;
+            const startIdx = Math.max(0, totalRecords - days - 1);
+            const startDate = historyArray[startIdx].Date_str;
+            
+            document.getElementById('att-start').value = startDate;
+            document.getElementById('att-end').value = latestDate;
+            
+            runAttribution();
+        }
+
+        // 统一初始化 ECharts
+        function initAllCharts() {
+            // 通用白昼明亮模式配置项生成器 (已设定 scale: true 以保证缩放时Y轴能完美匹配动态区间)
+            const getLightThemeOption = (yName, series, filteredHistory) => {
+                const dates = filteredHistory.map(r => r.Date_str);
+                return {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'axis',
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        borderColor: '#CBD5E1',
+                        textStyle: { color: '#1E293B' },
+                        extraCssText: 'shadow-md border border-slate-200',
+                        axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                    },
+                    legend: {
+                        textStyle: { color: '#475569' },
+                        selectedMode: true, // 开启图例勾选切换
+                        top: 0
+                    },
+                    grid: { top: 40, bottom: 25, left: 45, right: 20 },
+                    xAxis: {
+                        type: 'category',
+                        data: dates,
+                        axisLine: { lineStyle: { color: '#94A3B8' } },
+                        axisLabel: { color: '#64748B' }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: yName,
+                        scale: true, // 智能坐标轴缩放，不强制从0开始
+                        nameTextStyle: { color: '#64748B' },
+                        splitLine: { lineStyle: { color: '#F1F5F9' } },
+                        axisLabel: { color: '#64748B' }
+                    },
+                    series: series
+                };
+            };
+
+            const dates = historyArray.map(r => r.Date_str);
+
+            // 1. 图表 1：当年12月加权降息预期走势图 (双Y轴折线，开启自适应Y轴)
+            futuresChangeChart = echarts.init(document.getElementById('chart-futures-change'));
+            const futuresOption = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' }, selectedMode: true },
+                grid: { top: 40, bottom: 25, left: 45, right: 45 },
+                xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: [
+                    { type: 'value', name: '预期降息变动 (bp)', scale: true, nameTextStyle: { color: '#64748B' }, splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { color: '#64748B' } },
+                    { type: 'value', name: '基准中枢利率 (%)', scale: true, nameTextStyle: { color: '#64748B' }, splitLine: { show: false }, axisLabel: { color: '#64748B' } }
+                ],
+                series: [
+                    { name: '当年12月FF加权预期变化 (bp)', type: 'line', data: historyArray.map(r => r.weighted_change_history_bp), itemStyle: { color: '#EC4899' }, showSymbol: false },
+                    { name: '美联储利率中枢 (%)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.fed_target_midpoint), itemStyle: { color: '#64748B' }, showSymbol: false, lineStyle: { type: 'dashed' } }
+                ]
+            };
+            futuresChangeChart.setOption(futuresOption);
+
+            // 2. 图表 2：截面形态图 (横轴是期限)
+            yieldCurveChart = echarts.init(document.getElementById('chart-yield-curve'));
+            updateYieldCurveSnapshot(totalRecords - 1);
+
+            // 3. 图表 3：利差走势图 (联动源)
+            spreadsChart = echarts.init(document.getElementById('chart-spreads'));
+            const spreadsOption = getLightThemeOption('%', [
+                { name: '10Y 名义利率', type: 'line', data: historyArray.map(r => r.dgs_10y), itemStyle: { color: CHART_COLORS.nom10y }, showSymbol: false },
+                { name: '10Y - 2Y 利差', type: 'line', data: historyArray.map(r => r.spread_10y_2y), itemStyle: { color: '#0EA5E9' }, showSymbol: false },
+                { name: '10Y - 3M 利差', type: 'line', data: historyArray.map(r => r.spread_10y_3m), itemStyle: { color: '#6366F1' }, showSymbol: false },
+                { name: '30Y - 10Y 利差', type: 'line', data: historyArray.map(r => r.spread_30y_10y), itemStyle: { color: '#EC4899' }, showSymbol: false }
+            ], historyArray);
+            spreadsChart.setOption(spreadsOption);
+
+            // 4. 图表 4：远期利率走势图 (预期路径)
+            forwardsPathChart = echarts.init(document.getElementById('chart-forwards-path'));
+            const fwdPathOption = getLightThemeOption('%', [
+                { name: '1Y1Y 远期', type: 'line', data: historyArray.map(r => r.fwd_1y1y), itemStyle: { color: CHART_COLORS.fwd1y1y }, showSymbol: false },
+                { name: '2Y1Y 远期', type: 'line', data: historyArray.map(r => r.fwd_2y1y), itemStyle: { color: CHART_COLORS.fwd2y1y }, showSymbol: false },
+                { name: '5Y5Y 远期', type: 'line', data: historyArray.map(r => r.fwd_5y5y_nom), itemStyle: { color: CHART_COLORS.fwd5y5y }, showSymbol: false },
+                { name: '10Y10Y 远期', type: 'line', data: historyArray.map(r => r.fwd_10y10y), itemStyle: { color: CHART_COLORS.fwd10y10y }, showSymbol: false }
+            ], historyArray);
+            forwardsPathChart.setOption(fwdPathOption);
+
+            // 5. 图表 5：偏离度 Z-score 走势 (同时包含：252天滚动Z-score 与 全样本Z-score 以展示绝对极限偏离度)
+            forwardsZscoreChart = echarts.init(document.getElementById('chart-forwards-zscore'));
+            const fwdZscoreOption = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' } },
+                grid: { top: 40, bottom: 25, left: 45, right: 95 },
+                xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: {
+                    type: 'value',
+                    name: 'Z-score',
+                    scale: true,
+                    nameTextStyle: { color: '#64748B' },
+                    splitLine: { lineStyle: { color: '#F1F5F9' } },
+                    axisLabel: { color: '#64748B' }
+                },
+                series: [
+                    {
+                        name: '滚动 252天 Z-score (偏离异动)',
+                        type: 'line',
+                        data: historyArray.map(r => r.fwd_deviation_zscore),
+                        itemStyle: { color: CHART_COLORS.zscore },
+                        showSymbol: false
+                    },
+                    {
+                        name: '全历史样本 Z-score (绝对极值偏离)',
+                        type: 'line',
+                        data: historyArray.map(r => r.fwd_deviation_zscore_full),
+                        itemStyle: { color: CHART_COLORS.zscoreFull },
+                        showSymbol: false,
+                        lineStyle: { width: 2 },
+                        markLine: {
+                            silent: true,
+                            symbol: 'none',
+                            label: {
+                                position: 'end',
+                                formatter: '{b}',
+                                fontSize: 9,
+                                color: '#64748B'
+                            },
+                            lineStyle: {
+                                type: 'dashed',
+                                width: 1
+                            },
+                            data: [
+                                { yAxis: 2, name: '+2 SD (极限上限)', lineStyle: { color: '#EF4444' } },
+                                { yAxis: 1, name: '+1 SD (上方预警)', lineStyle: { color: '#F59E0B' } },
+                                { yAxis: 0, name: '均值线 (0)', lineStyle: { color: '#94A3B8', type: 'solid' } },
+                                { yAxis: -1, name: '-1 SD (下方预警)', lineStyle: { color: '#F59E0B' } },
+                                { yAxis: -2, name: '-2 SD (极限下限)', lineStyle: { color: '#EF4444' } }
+                            ]
+                        }
+                    }
+                ]
+            };
+            forwardsZscoreChart.setOption(fwdZscoreOption);
+
+            // 6. 图表 6：5年期名义利率通胀分解
+            infDec5yChart = echarts.init(document.getElementById('chart-inf-dec-5y'));
+            const infDec5yOption = getLightThemeOption('%', [
+                { name: '5Y 名义收益率', type: 'line', data: historyArray.map(r => r.dgs_5y), itemStyle: { color: CHART_COLORS.nom10y }, showSymbol: false, lineStyle: { width: 2 } },
+                { name: '5Y TIPS 实际收益率', type: 'line', data: historyArray.map(r => r.real_5y), itemStyle: { color: CHART_COLORS.real10y }, showSymbol: false, lineStyle: { width: 2 } },
+                { name: '5Y BEI 通胀预期', type: 'line', data: historyArray.map(r => r.bei_5y), itemStyle: { color: CHART_COLORS.bei10y }, showSymbol: false, lineStyle: { width: 2 } }
+            ], historyArray);
+            infDec5yChart.setOption(infDec5yOption);
+
+            // 7. 图表 7：10年期名义利率通胀分解
+            infDec10yChart = echarts.init(document.getElementById('chart-inf-dec-10y'));
+            const infDec10yOption = getLightThemeOption('%', [
+                { name: '10Y 名义收益率', type: 'line', data: historyArray.map(r => r.dgs_10y), itemStyle: { color: CHART_COLORS.nom10y }, showSymbol: false, lineStyle: { width: 2.5 } },
+                { name: '10Y TIPS 实际收益率', type: 'line', data: historyArray.map(r => r.real_10y), itemStyle: { color: CHART_COLORS.real10y }, showSymbol: false, lineStyle: { width: 2.5 } },
+                { name: '10Y BEI 通胀预期', type: 'line', data: historyArray.map(r => r.bei_10y), itemStyle: { color: CHART_COLORS.bei10y }, showSymbol: false, lineStyle: { width: 2.5 } }
+            ], historyArray);
+            infDec10yChart.setOption(infDec10yOption);
+
+            // 8. 图表 8：5Y5Y 实际与通胀折线走势
+            anchor5y5yChart = echarts.init(document.getElementById('chart-anchor-5y5y'));
+            const anchorOption = getLightThemeOption('%', [
+                { name: '5Y5Y 实际利率锚 (Real Yield)', type: 'line', data: historyArray.map(r => r.fwd_5y5y_real), itemStyle: { color: CHART_COLORS.fwdReal }, showSymbol: false },
+                { name: '5Y5Y 远期通胀预期 (Forward Inflation)', type: 'line', data: historyArray.map(r => r.fwd_5y5y_infl), itemStyle: { color: CHART_COLORS.fwdInfl }, showSymbol: false }
+            ], historyArray);
+            anchor5y5yChart.setOption(anchorOption);
+
+            // 9. 图表 9：ACM 期望与期限溢价风险拆解 (已升级为双 Y 轴，期限溢价 TP 映射在右轴上)
+            riskDecChart = echarts.init(document.getElementById('chart-risk-dec'));
+            const riskDecOption = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' }, selectedMode: true },
+                grid: { top: 40, bottom: 25, left: 45, right: 45 },
+                xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: [
+                    { type: 'value', name: '名义/期望利率 (%)', scale: true, nameTextStyle: { color: '#64748B' }, splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { color: '#64748B' } },
+                    { type: 'value', name: '期限溢价 TP (%)', scale: true, nameTextStyle: { color: '#64748B' }, splitLine: { show: false }, axisLabel: { color: '#64748B' } }
+                ],
+                series: [
+                    { name: '10Y零息名义利率 (THREEFY10)', type: 'line', data: historyArray.map(r => r.acm_nom_10y), itemStyle: { color: '#94A3B8' }, showSymbol: false, lineStyle: { type: 'dashed', width: 1.5 } },
+                    { name: '10Y 期望短期利率 (Expected Rate)', type: 'line', data: historyArray.map(r => r.acm_exp_10y), itemStyle: { color: CHART_COLORS.exp10y }, showSymbol: false, lineStyle: { width: 2.5 } },
+                    { name: '10Y ACM 期限溢价 (Term Premium)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.acm_tp_10y), itemStyle: { color: CHART_COLORS.tp10y }, showSymbol: false, lineStyle: { width: 2.5 } }
+                ]
+            };
+            riskDecChart.setOption(riskDecOption);
+
+            // 10. 图表 10：2Y名义(右轴1-逆序) + 10Y ACM TP(左轴) vs 黄金价格(右轴)
+            // 设计三 Y 轴：
+            // - Y轴 0 (左侧，正序)：10Y ACM 期限溢价 (%)
+            // - Y轴 1 (右侧0，正序)：黄金价格 (美元)
+            // - Y轴 2 (右侧1，逆序，向右平移 55px)：2Y 美债收益率 (%) (反向对齐负相关性)
+            tpVsGoldChart = echarts.init(document.getElementById('chart-tp-vs-gold'));
+            const tpVsGoldOption = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' } },
+                grid: { top: 40, bottom: 25, left: 45, right: 110 }, // 拓宽右边距放第三根轴
+                xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: [
+                    { 
+                        type: 'value', 
+                        name: '10Y ACM TP (%)', 
+                        scale: true, 
+                        nameTextStyle: { color: '#8B5CF6' }, 
+                        splitLine: { lineStyle: { color: '#F1F5F9' } }, 
+                        axisLabel: { color: '#8B5CF6' } 
+                    },
+                    { 
+                        type: 'value', 
+                        name: '现货黄金 (美元/盎司)', 
+                        scale: true, 
+                        nameTextStyle: { color: '#B45309' }, 
+                        splitLine: { show: false }, 
+                        axisLabel: { color: '#B45309' } 
+                    },
+                    { 
+                        type: 'value', 
+                        name: '2Y 收益率 (%) (逆序轴)', 
+                        scale: true, 
+                        inverse: true, // 关键：倒置 Y 轴展现负相关性！
+                        offset: 55, // 向右平移避免重叠
+                        nameTextStyle: { color: '#0EA5E9' }, 
+                        splitLine: { show: false }, 
+                        axisLabel: { color: '#0EA5E9' },
+                        axisLine: { show: true, lineStyle: { color: '#0EA5E9' } }
+                    }
+                ],
+                series: [
+                    { name: '10Y ACM 期限溢价 (长端动力-左轴)', type: 'line', yAxisIndex: 0, data: historyArray.map(r => r.acm_tp_10y), itemStyle: { color: CHART_COLORS.tp10y }, showSymbol: false, lineStyle: { width: 2 } },
+                    { name: '2Y 国债收益率 (短端动力-右轴1-逆序)', type: 'line', yAxisIndex: 2, data: historyArray.map(r => r.dgs_2y), itemStyle: { color: '#0EA5E9' }, showSymbol: false, lineStyle: { width: 2 } },
+                    { name: '伦敦现货黄金价格 (右轴0)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.gold_price), itemStyle: { color: CHART_COLORS.gold }, showSymbol: false, lineStyle: { width: 2.5 } }
+                ],
+                dataZoom: [
+                    { type: 'inside', start: 90, end: 100 },
+                    { type: 'slider', start: 90, end: 100, height: 20, bottom: 5, textStyle: { color: '#64748B' } }
+                ]
+            };
+            tpVsGoldChart.setOption(tpVsGoldOption);
+
+            // 自适应窗口重绘
+            window.addEventListener('resize', () => {
+                yieldCurveChart.resize();
+                spreadsChart.resize();
+                forwardsPathChart.resize();
+                forwardsZscoreChart.resize();
+                infDec5yChart.resize();
+                infDec10yChart.resize();
+                anchor5y5yChart.resize();
+                riskDecChart.resize();
+                futuresChangeChart.resize();
+                tpVsGoldChart.resize();
+            });
+        }
+
+        // 用于更新图 2 收益率曲线截面图的方法
+        function updateYieldCurveSnapshot(index) {
+            if (index < 0 || index >= totalRecords) return;
+            const r = historyArray[index];
+            const tenors = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"];
+            const yieldValues = [
+                r.dgs_3m, r.dgs_6m, r.dgs_1y, r.dgs_2y, r.dgs_3y, r.dgs_5y, r.dgs_7y, r.dgs_10y, r.dgs_20y, r.dgs_30y
+            ];
+
+            let curve1wValues = null, curve1mValues = null, curve1yValues = null;
+            if (index === totalRecords - 1) {
+                const getRowVals = (ago) => {
+                    const idx = Math.max(0, index - ago);
+                    const row = historyArray[idx];
+                    return [row.dgs_3m, row.dgs_6m, row.dgs_1y, row.dgs_2y, row.dgs_3y, row.dgs_5y, row.dgs_7y, row.dgs_10y, row.dgs_20y, row.dgs_30y];
+                };
+                curve1wValues = getRowVals(5);
+                curve1mValues = getRowVals(21);
+                curve1yValues = getRowVals(252);
+            }
+
+            snapshotDateEl.innerText = r.Date_str;
+
+            const series = [
+                {
+                    name: index === totalRecords - 1 ? '最新曲线' : `选择曲线 (${r.Date_str})`,
+                    type: 'line',
+                    data: yieldValues,
+                    itemStyle: { color: CHART_COLORS.curveLatest },
+                    lineStyle: { width: 3.5 },
+                    symbolSize: 8
+                }
+            ];
+
+            if (index === totalRecords - 1) {
+                series.push(
+                    { name: '1周前', type: 'line', data: curve1wValues, itemStyle: { color: CHART_COLORS.curve1w }, lineStyle: { type: 'dotted', width: 1.5 }, showSymbol: false },
+                    { name: '1月前', type: 'line', data: curve1mValues, itemStyle: { color: CHART_COLORS.curve1m }, lineStyle: { type: 'dashed', width: 1.5 }, showSymbol: false },
+                    { name: '1年前', type: 'line', data: curve1yValues, itemStyle: { color: CHART_COLORS.curve1y }, lineStyle: { type: 'dashed', width: 1.5 }, showSymbol: false }
+                );
+            }
+
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' } },
+                grid: { top: 40, bottom: 25, left: 45, right: 20 },
+                xAxis: { type: 'category', data: tenors, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: { type: 'value', name: '收益率 (%)', min: 'dataMin', max: 'dataMax', splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { color: '#64748B' } },
+                series: series
+            };
+            yieldCurveChart.setOption(option, true);
+        }
+
+        // 绑定联动及独立时间过滤器变化事件
+        function setupListeners() {
+            // 图表 3 悬停联动刷新图 2 截面，获取当前图表的真实 X 轴时间
+            spreadsChart.on('updateAxisPointer', function (params) {
+                if (params.axesInfo && params.axesInfo.length > 0) {
+                    const dataIndex = params.dataIndex;
+                    if (dataIndex !== undefined && dataIndex !== null) {
+                        if (!isPlaying) {
+                            const currentXData = spreadsChart.getOption().xAxis[0].data;
+                            if (currentXData && currentXData[dataIndex]) {
+                                const targetDate = currentXData[dataIndex];
+                                const mainIndex = historyArray.findIndex(r => r.Date_str === targetDate);
+                                if (mainIndex !== -1) {
+                                    sliderTimeTravel.value = mainIndex;
+                                    updateYieldCurveSnapshot(mainIndex);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 2. 旅行滑块拉动
+            sliderTimeTravel.addEventListener('input', (e) => {
+                const idx = parseInt(e.target.value);
+                updateYieldCurveSnapshot(idx);
+                spreadsChart.dispatchAction({
+                    type: 'showTip',
+                    seriesIndex: 0,
+                    dataIndex: idx
+                });
+            });
+
+            // 3. 自动播放
+            btnPlayPause.addEventListener('click', () => {
+                if (isPlaying) {
+                    pauseTimeTravel();
+                } else {
+                    playTimeTravel();
+                }
+            });
+
+            // 4. 配置指南折叠
+            btnToggleDev.addEventListener('click', () => {
+                const isHidden = panelDevGuide.classList.contains('hidden');
+                if (isHidden) {
+                    panelDevGuide.classList.remove('hidden');
+                    iconChevron.style.transform = 'rotate(-180deg)';
+                } else {
+                    panelDevGuide.classList.add('hidden');
+                    iconChevron.style.transform = 'rotate(0deg)';
+                }
+            });
+
+            // 5. 绑定所有图表卡的独立自定义时间区间 change 事件
+            chartIds.forEach(id => {
+                const startInput = document.getElementById(`start-${id}`);
+                const endInput = document.getElementById(`end-${id}`);
+                
+                const handler = () => {
+                    const sVal = startInput.value;
+                    const eVal = endInput.value;
+                    updateSingleChartRange(id, sVal, eVal);
+                };
+                
+                startInput.addEventListener('change', handler);
+                endInput.addEventListener('change', handler);
+            });
+        }
+
+        // 执行单张图表时间窗口的重绘过滤
+        function updateSingleChartRange(chartId, startDateStr, endDateStr) {
+            console.log(`独立重绘图表 [${chartId}]: ${startDateStr} 至 ${endDateStr}`);
+            
+            const subset = historyArray.filter(r => r.Date_str >= startDateStr && r.Date_str <= endDateStr);
+            if (subset.length === 0) {
+                alert("选定日期内无有效利率记录。");
+                return;
+            }
+            
+            const localDates = subset.map(r => r.Date_str);
+            let chartInstance = null;
+            let seriesConfig = [];
+            
+            if (chartId === 'futures') {
+                chartInstance = futuresChangeChart;
+                chartInstance.setOption({
+                    xAxis: { data: localDates },
+                    series: [
+                        { data: subset.map(r => r.weighted_change_history_bp) },
+                        { data: subset.map(r => r.fed_target_midpoint) }
+                    ]
+                });
+                return;
+            } 
+            else if (chartId === 'spreads') {
+                chartInstance = spreadsChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.dgs_10y) },
+                    { data: subset.map(r => r.spread_10y_2y) },
+                    { data: subset.map(r => r.spread_10y_3m) },
+                    { data: subset.map(r => r.spread_30y_10y) }
+                ];
+            } 
+            else if (chartId === 'forwards') {
+                chartInstance = forwardsPathChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.fwd_1y1y) },
+                    { data: subset.map(r => r.fwd_2y1y) },
+                    { data: subset.map(r => r.fwd_5y5y_nom) },
+                    { data: subset.map(r => r.fwd_10y10y) }
+                ];
+            } 
+            else if (chartId === 'zscore') {
+                chartInstance = forwardsZscoreChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.fwd_deviation_zscore) },
+                    { data: subset.map(r => r.fwd_deviation_zscore_full) }
+                ];
+            } 
+            else if (chartId === 'inf5y') {
+                chartInstance = infDec5yChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.dgs_5y) },
+                    { data: subset.map(r => r.real_5y) },
+                    { data: subset.map(r => r.bei_5y) }
+                ];
+            } 
+            else if (chartId === 'inf10y') {
+                chartInstance = infDec10yChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.dgs_10y) },
+                    { data: subset.map(r => r.real_10y) },
+                    { data: subset.map(r => r.bei_10y) }
+                ];
+            } 
+            else if (chartId === 'anchor') {
+                chartInstance = anchor5y5yChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.fwd_5y5y_real) },
+                    { data: subset.map(r => r.fwd_5y5y_infl) }
+                ];
+            } 
+            else if (chartId === 'risk') {
+                chartInstance = riskDecChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.acm_nom_10y) },
+                    { data: subset.map(r => r.acm_exp_10y) },
+                    { data: subset.map(r => r.acm_tp_10y) }
+                ];
+            } 
+            else if (chartId === 'gold') {
+                chartInstance = tpVsGoldChart;
+                chartInstance.setOption({
+                    xAxis: { data: localDates },
+                    series: [
+                        { data: subset.map(r => r.acm_tp_10y) },
+                        { data: subset.map(r => r.dgs_2y) },
+                        { data: subset.map(r => r.gold_price) }
+                    ]
+                });
+                return;
+            }
+            
+            if (chartInstance) {
+                chartInstance.setOption({
+                    xAxis: { data: localDates },
+                    series: seriesConfig
+                });
+            }
+        }
+
+        // 自动向前播放时间旅行
+        function playTimeTravel() {
+            isPlaying = true;
+            iconPlay.setAttribute('data-lucide', 'pause');
+            lucide.createIcons();
+            
+            let currentIdx = parseInt(sliderTimeTravel.value);
+            if (currentIdx >= totalRecords - 1) {
+                currentIdx = 0; // 重置起点
+            }
+
+            playInterval = setInterval(() => {
+                currentIdx++;
+                if (currentIdx >= totalRecords) {
+                    pauseTimeTravel();
+                    sliderTimeTravel.value = totalRecords - 1;
+                    updateYieldCurveSnapshot(totalRecords - 1);
+                } else {
+                    sliderTimeTravel.value = currentIdx;
+                    updateYieldCurveSnapshot(currentIdx);
+                    spreadsChart.dispatchAction({
+                        type: 'showTip',
+                        seriesIndex: 0,
+                        dataIndex: currentIdx
+                    });
+                }
+            }, 80);
+        }
+
+        // 暂停时间旅行播放
+        function pauseTimeTravel() {
+            isPlaying = false;
+            iconPlay.setAttribute('data-lucide', 'play');
+            lucide.createIcons();
+            clearInterval(playInterval);
+        }
+
+        // ===== 开发者与自定义配置区 =====
+        function createLineChart(containerId, title, seriesNames, dataKeys, yAxisLabel = '%') {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            const chart = echarts.init(container);
+            const dates = historyArray.map(r => r.Date_str);
+            const seriesList = seriesNames.map((name, i) => ({
+                name: name,
+                type: 'line',
+                data: historyArray.map(r => r[dataKeys[i]]),
+                showSymbol: false
+            }));
+            
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' }, selectedMode: true },
+                grid: { top: 40, bottom: 25, left: 45, right: 20 },
+                xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: { type: 'value', name: yAxisLabel, scale: true, splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { color: '#64748B' } },
+                series: seriesList
+            };
+            chart.setOption(option);
+            window.addEventListener('resize', () => chart.resize());
+            return chart;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local Excel downloads
+ACMTermPremium.xls
+
+# OS files
+.DS_Store
+Thumbs.db

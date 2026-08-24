@@ -1,0 +1,39 @@
+name: Daily US Treasury Data Update
+
+on:
+  schedule:
+    # 每天北京时间早上 6:30 自动运行一次 (即格林威治时间 22:30，此时美股已收盘且美债数据已在 FRED 和纽约联储发布)
+    - cron: '30 22 * * 1-5'
+  workflow_dispatch: # 允许在 GitHub 网页上手动点击运行
+
+permissions:
+  contents: write # 赋予 Actions 写入库的权限以推送更新后的 data.js
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas xlrd yfinance numpy requests
+
+    - name: Run data update script
+      run: |
+        python fetch_data.py
+
+    - name: Commit and push if data changed
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add data.js
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update daily treasury data [skip ci]" && git push)
