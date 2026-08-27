@@ -10,8 +10,25 @@
     <script src="echarts.min.js" onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';"></script>
     <!-- Lucide Icons: 本地离线版 (若本地不存在则自动回退至 CDN) -->
     <script src="lucide.min.js" onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js';"></script>
-    <!-- 动态数据集插槽：数据由 Python 自动内嵌，确保单个 HTML 文件可完全独立便携分享 -->
-    <script src="data.js"></script>
+    <!-- 动态载入数据集并追加时间戳，以彻底规避浏览器的 CDN 和本地强缓存问题 -->
+    <script>
+        (function() {
+            var script = document.createElement('script');
+            // 若在网络环境下运行，添加时间戳参数避开缓存；若在本地 file:// 运行，直接加载
+            if (window.location.protocol.startsWith('http')) {
+                script.src = 'data.js?v=' + new Date().getTime();
+            } else {
+                script.src = 'data.js';
+            }
+            script.onload = function() {
+                // 触发主流程的初始化
+                if (typeof startDashboard === 'function') {
+                    startDashboard();
+                }
+            };
+            document.head.appendChild(script);
+        })();
+    </script>
     <script>
         // 配置 Tailwind CSS 自定义浅色主题配色
         tailwind.config = {
@@ -622,98 +639,101 @@
             return `DoD: <span class="${color1}">${sign1}${dodVal.toFixed(1)} bp</span> | WoW: <span class="${color5}">${sign5}${wowVal.toFixed(1)} bp</span>`;
         }
 
-        // 直接从全局变量 window.chartData 中解析数据，彻底绕过浏览器的 file:// 协议 CORS 本地安全限制
-        if (window.chartData) {
-            const data = window.chartData;
-            dashboardData = data;
-            historyArray = data.history;
-            totalRecords = historyArray.length;
-            
-            // 顶部卡片数据更新
-            updateTimeEl.innerText = data.update_time;
-            metricWeightedChangeEl.innerText = (data.weighted_change_bp >= 0 ? '+' : '') + data.weighted_change_bp;
-            metricFuturesContractEl.innerText = data.futures_contract;
-            metricFedMidEl.innerText = data.target_midpoint.toFixed(3) + "%";
-
-            // 直接读取最新一个交易日的数据行及变动
-            const latest = historyArray[totalRecords - 1];
-
-            // 1. 卡片 1 (年底期货预期变动 DoDs/WoWs)
-            document.getElementById('metric-futures-change').innerHTML = getChangeHtml(latest.weighted_change_history_bp_dod, latest.weighted_change_history_bp_wow);
-
-            // 2. 卡片 2 (2Y & 10Y 名义收益率 + 利差变动)
-            metricNom10yEl.innerText = latest.dgs_10y ? latest.dgs_10y.toFixed(2) : '-';
-            document.getElementById('metric-nom-10y-change').innerHTML = getChangeHtml(latest.dgs_10y_dod, latest.dgs_10y_wow);
-            
-            document.getElementById('metric-nom-2y').innerText = latest.dgs_2y ? latest.dgs_2y.toFixed(2) : '-';
-            document.getElementById('metric-nom-2y-change').innerHTML = getChangeHtml(latest.dgs_2y_dod, latest.dgs_2y_wow);
-            
-            document.getElementById('metric-spread-10y2y').innerText = latest.spread_10y_2y ? (latest.spread_10y_2y * 100).toFixed(0) + " bp" : '-';
-            document.getElementById('metric-spread-10y2y-change').innerHTML = getChangeHtml(latest.spread_10y_2y_dod, latest.spread_10y_2y_wow);
-
-            // 3. 卡片 3 (10Y 实际 TIPS & BEI 通胀预期 + 5Y5Y 锚变动)
-            metricReal10yEl.innerText = latest.real_10y ? latest.real_10y.toFixed(2) : '-';
-            document.getElementById('metric-real-10y-change').innerHTML = getChangeHtml(latest.real_10y_dod, latest.real_10y_wow);
-            
-            metricBei10yEl.innerText = latest.bei_10y ? latest.bei_10y.toFixed(2) : '-';
-            document.getElementById('metric-bei-10y-change').innerHTML = getChangeHtml(latest.bei_10y_dod, latest.bei_10y_wow);
-            
-            document.getElementById('metric-anchor-infl').innerText = latest.fwd_5y5y_infl ? latest.fwd_5y5y_infl.toFixed(2) + "%" : '-';
-            document.getElementById('metric-anchor-infl-change').innerHTML = getChangeHtml(latest.fwd_5y5y_infl_dod, latest.fwd_5y5y_infl_wow);
-
-            // 4. 卡片 4 (ACM 期望 & ACM 期限溢价)
-            metricTp10yEl.innerText = latest.acm_tp_10y ? latest.acm_tp_10y.toFixed(2) : '-';
-            document.getElementById('metric-tp-10y-change').innerHTML = getChangeHtml(latest.acm_tp_10y_dod, latest.acm_tp_10y_wow);
-            
-            metricExp10yEl.innerText = latest.acm_exp_10y ? latest.acm_exp_10y.toFixed(2) : '-';
-            document.getElementById('metric-exp-10y-change').innerHTML = getChangeHtml(latest.acm_exp_10y_dod, latest.acm_exp_10y_wow);
-            
-            document.getElementById('metric-nom-kw').innerText = latest.acm_nom_10y ? latest.acm_nom_10y.toFixed(2) + "%" : '-';
-            document.getElementById('metric-nom-kw-change').innerHTML = getChangeHtml(latest.acm_nom_10y_dod, latest.acm_nom_10y_wow);
-
-            // 初始化每一个独立图表的日期选择输入框
-            chartIds.forEach(id => {
-                const startInput = document.getElementById(`start-${id}`);
-                const endInput = document.getElementById(`end-${id}`);
+        // 定义全局初始化入口，由动态加载 data.js 成功后异步调用，以彻底避开缓存
+        function startDashboard() {
+            // 直接从全局变量 window.chartData 中解析数据，彻底绕过浏览器的 file:// 协议 CORS 本地安全限制
+            if (window.chartData) {
+                const data = window.chartData;
+                dashboardData = data;
+                historyArray = data.history;
+                totalRecords = historyArray.length;
                 
-                // 设置历史边界的最值，限制用户输入合法性
-                startInput.value = historyArray[0].Date_str;
-                startInput.end = historyArray[totalRecords - 1].Date_str;
-                startInput.min = historyArray[0].Date_str;
-                startInput.max = historyArray[totalRecords - 1].Date_str;
+                // 顶部卡片数据更新
+                updateTimeEl.innerText = data.update_time;
+                metricWeightedChangeEl.innerText = (data.weighted_change_bp >= 0 ? '+' : '') + data.weighted_change_bp;
+                metricFuturesContractEl.innerText = data.futures_contract;
+                metricFedMidEl.innerText = data.target_midpoint.toFixed(3) + "%";
 
-                endInput.value = historyArray[totalRecords - 1].Date_str;
-                endInput.min = historyArray[0].Date_str;
-                endInput.max = historyArray[totalRecords - 1].Date_str;
-            });
+                // 直接读取最新一个交易日的数据行及变动
+                const latest = historyArray[totalRecords - 1];
 
-            // 初始化归因面板的输入框日期
-            const attStartInput = document.getElementById('att-start');
-            const attEndInput = document.getElementById('att-end');
-            attStartInput.value = historyArray[Math.max(0, totalRecords - 66)].Date_str; // 默认前3个月左右
-            attStartInput.min = historyArray[0].Date_str;
-            attStartInput.max = historyArray[totalRecords - 1].Date_str;
-            
-            attEndInput.value = historyArray[totalRecords - 1].Date_str;
-            attEndInput.min = historyArray[0].Date_str;
-            attEndInput.max = historyArray[totalRecords - 1].Date_str;
+                // 1. 卡片 1 (年底期货预期变动 DoDs/WoWs)
+                document.getElementById('metric-futures-change').innerHTML = getChangeHtml(latest.weighted_change_history_bp_dod, latest.weighted_change_history_bp_wow);
 
-            // 设置时间旅行滑块的步数
-            sliderTimeTravel.max = totalRecords - 1;
-            sliderTimeTravel.value = totalRecords - 1;
-            snapshotDateEl.innerText = latest.Date_str;
+                // 2. 卡片 2 (2Y & 10Y 名义收益率 + 利差变动)
+                metricNom10yEl.innerText = latest.dgs_10y ? latest.dgs_10y.toFixed(2) : '-';
+                document.getElementById('metric-nom-10y-change').innerHTML = getChangeHtml(latest.dgs_10y_dod, latest.dgs_10y_wow);
+                
+                document.getElementById('metric-nom-2y').innerText = latest.dgs_2y ? latest.dgs_2y.toFixed(2) : '-';
+                document.getElementById('metric-nom-2y-change').innerHTML = getChangeHtml(latest.dgs_2y_dod, latest.dgs_2y_wow);
+                
+                document.getElementById('metric-spread-10y2y').innerText = latest.spread_10y_2y ? (latest.spread_10y_2y * 100).toFixed(0) + " bp" : '-';
+                document.getElementById('metric-spread-10y2y-change').innerHTML = getChangeHtml(latest.spread_10y_2y_dod, latest.spread_10y_2y_wow);
 
-            // 首次全部渲染
-            initAllCharts();
-            
-            // 首次跑一下归因诊断计算
-            runAttribution();
-            
-            // 绑定监听器
-            setupListeners();
-        } else {
-            console.error("未找到 window.chartData，请确保同目录下已生成 data.js 且成功载入。");
-            alert("未找到本地美债数据。请先执行 fetch_data.py 获取最新数据并生成 data.js 缓存。");
+                // 3. 卡片 3 (10Y 实际 TIPS & BEI 通胀预期 + 5Y5Y 锚变动)
+                metricReal10yEl.innerText = latest.real_10y ? latest.real_10y.toFixed(2) : '-';
+                document.getElementById('metric-real-10y-change').innerHTML = getChangeHtml(latest.real_10y_dod, latest.real_10y_wow);
+                
+                metricBei10yEl.innerText = latest.bei_10y ? latest.bei_10y.toFixed(2) : '-';
+                document.getElementById('metric-bei-10y-change').innerHTML = getChangeHtml(latest.bei_10y_dod, latest.bei_10y_wow);
+                
+                document.getElementById('metric-anchor-infl').innerText = latest.fwd_5y5y_infl ? latest.fwd_5y5y_infl.toFixed(2) + "%" : '-';
+                document.getElementById('metric-anchor-infl-change').innerHTML = getChangeHtml(latest.fwd_5y5y_infl_dod, latest.fwd_5y5y_infl_wow);
+
+                // 4. 卡片 4 (ACM 期望 & ACM 期限溢价)
+                metricTp10yEl.innerText = latest.acm_tp_10y ? latest.acm_tp_10y.toFixed(2) : '-';
+                document.getElementById('metric-tp-10y-change').innerHTML = getChangeHtml(latest.acm_tp_10y_dod, latest.acm_tp_10y_wow);
+                
+                metricExp10yEl.innerText = latest.acm_exp_10y ? latest.acm_exp_10y.toFixed(2) : '-';
+                document.getElementById('metric-exp-10y-change').innerHTML = getChangeHtml(latest.acm_exp_10y_dod, latest.acm_exp_10y_wow);
+                
+                document.getElementById('metric-nom-kw').innerText = latest.acm_nom_10y ? latest.acm_nom_10y.toFixed(2) + "%" : '-';
+                document.getElementById('metric-nom-kw-change').innerHTML = getChangeHtml(latest.acm_nom_10y_dod, latest.acm_nom_10y_wow);
+
+                // 初始化每一个独立图表的日期选择输入框
+                chartIds.forEach(id => {
+                    const startInput = document.getElementById(`start-${id}`);
+                    const endInput = document.getElementById(`end-${id}`);
+                    
+                    // 设置历史边界的最值，限制用户输入合法性
+                    startInput.value = historyArray[0].Date_str;
+                    startInput.end = historyArray[totalRecords - 1].Date_str;
+                    startInput.min = historyArray[0].Date_str;
+                    startInput.max = historyArray[totalRecords - 1].Date_str;
+
+                    endInput.value = historyArray[totalRecords - 1].Date_str;
+                    endInput.min = historyArray[0].Date_str;
+                    endInput.max = historyArray[totalRecords - 1].Date_str;
+                });
+
+                // 初始化归因面板的输入框日期
+                const attStartInput = document.getElementById('att-start');
+                const attEndInput = document.getElementById('att-end');
+                attStartInput.value = historyArray[Math.max(0, totalRecords - 66)].Date_str; // 默认前3个月左右
+                attStartInput.min = historyArray[0].Date_str;
+                attStartInput.max = historyArray[totalRecords - 1].Date_str;
+                
+                attEndInput.value = historyArray[totalRecords - 1].Date_str;
+                attEndInput.min = historyArray[0].Date_str;
+                attEndInput.max = historyArray[totalRecords - 1].Date_str;
+
+                // 设置时间旅行滑块的步数
+                sliderTimeTravel.max = totalRecords - 1;
+                sliderTimeTravel.value = totalRecords - 1;
+                snapshotDateEl.innerText = latest.Date_str;
+
+                // 首次全部渲染
+                initAllCharts();
+                
+                // 首次跑一下归因诊断计算
+                runAttribution();
+                
+                // 绑定监听器
+                setupListeners();
+            } else {
+                console.error("未找到 window.chartData，请确保同目录下已生成 data.js 且成功载入。");
+                alert("未找到本地美债数据。请先执行 fetch_data.py 获取最新数据并生成 data.js 缓存。");
+            }
         }
 
         // ==================== 思考流归因诊断动态计算核心算法 ====================
