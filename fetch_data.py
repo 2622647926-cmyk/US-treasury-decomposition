@@ -328,9 +328,10 @@ def main():
     # 将 DataFrame 转换为字典数组结构
     history_data = merged_df.to_dict(orient='records')
     
-    # 构造最终写入本地 json 的总体层级结构
+    # 构造最终写入本地 json 的总体层级结构 (使用 UTC+8 北京时间，以便在 GitHub Actions 云端运行时显示正确的国内时间)
+    beijing_time = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     final_output = {
-        "update_time": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "update_time": beijing_time.strftime('%Y-%m-%d %H:%M:%S'),
         "target_midpoint": latest_target_midpoint,
         "futures_contract": f"ZQZ{str(current_year)[2:]}.CBT",
         "futures_price": latest_futures_price,
