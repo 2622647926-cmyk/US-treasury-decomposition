@@ -105,29 +105,41 @@
                 </div>
             </div>
 
-            <!-- 卡片 2：美债名义收益率对比 (2Y vs 10Y) -->
+            <!-- 卡片 2：美债名义收益率对比 (2Y / 10Y / 30Y) -->
             <div class="bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
                 <div class="absolute top-0 right-0 p-3 text-slate-100">
                     <i data-lucide="trending-up" class="h-14 w-14"></i>
                 </div>
-                <p class="text-xs text-slate-400 font-semibold tracking-wider">国债名义收益率对比 (2Y vs 10Y)</p>
-                <div class="mt-2 flex items-baseline gap-4">
+                <p class="text-xs text-slate-400 font-semibold tracking-wider">国债名义收益率对比 (2Y / 10Y / 30Y)</p>
+                <div class="mt-2 flex items-baseline justify-between gap-1">
                     <div>
-                        <span class="text-xs text-slate-400 block">2Y 名义:</span>
-                        <span id="metric-nom-2y" class="text-2xl font-extrabold text-slate-900">-</span>
-                        <span class="text-xs text-slate-400">%</span>
-                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-nom-2y-change">-</div>
+                        <span class="text-[10px] text-slate-400 block">2Y 名义:</span>
+                        <span id="metric-nom-2y" class="text-lg font-extrabold text-slate-900">-</span>
+                        <span class="text-[10px] text-slate-400">%</span>
+                        <div class="text-[8px] leading-tight" id="metric-nom-2y-change">-</div>
                     </div>
-                    <div class="border-l border-slate-200 pl-4">
-                        <span class="text-xs text-slate-400 block">10Y 名义:</span>
-                        <span id="metric-nom-10y" class="text-2xl font-extrabold text-slate-900">-</span>
-                        <span class="text-xs text-slate-400">%</span>
-                        <div class="text-[9px] mt-0.5 leading-tight" id="metric-nom-10y-change">-</div>
+                    <div class="border-l border-slate-200 pl-2">
+                        <span class="text-[10px] text-slate-400 block">10Y 名义:</span>
+                        <span id="metric-nom-10y" class="text-lg font-extrabold text-slate-900">-</span>
+                        <span class="text-[10px] text-slate-400">%</span>
+                        <div class="text-[8px] leading-tight" id="metric-nom-10y-change">-</div>
+                    </div>
+                    <div class="border-l border-slate-200 pl-2">
+                        <span class="text-[10px] text-slate-400 block">30Y 名义:</span>
+                        <span id="metric-nom-30y" class="text-lg font-extrabold text-slate-900">-</span>
+                        <span class="text-[10px] text-slate-400">%</span>
+                        <div class="text-[8px] leading-tight" id="metric-nom-30y-change">-</div>
                     </div>
                 </div>
-                <div class="mt-3 text-[10px] text-slate-500 border-t border-slate-200 pt-2 flex justify-between items-center font-sans">
-                    <span>10Y-2Y利差: <span id="metric-spread-10y2y" class="font-bold text-slate-700">-</span></span>
-                    <span id="metric-spread-10y2y-change" class="text-[9px]">-</span>
+                <div class="mt-3 text-[9px] text-slate-500 border-t border-slate-200 pt-2 flex flex-col gap-1 font-sans">
+                    <div class="flex justify-between items-center">
+                        <span>10Y-2Y利差: <span id="metric-spread-10y2y" class="font-bold text-slate-700">-</span></span>
+                        <span id="metric-spread-10y2y-change" class="text-[8px]">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span>30Y-10Y利差: <span id="metric-spread-30y10y" class="font-bold text-slate-700">-</span></span>
+                        <span id="metric-spread-30y10y-change" class="text-[8px]">-</span>
+                    </div>
                 </div>
             </div>
 
@@ -263,6 +275,70 @@
             </div>
         </section>
 
+        <!-- ==================== PART 0: 美债大事复盘与标记工具 ==================== -->
+        <section class="space-y-4">
+            <div class="border-l-4 border-rose-500 pl-3">
+                <h2 class="text-base font-bold text-slate-900">PART 0: 美债大事复盘与标记工具 (Treasury Event Timeline & Annotation Tool)</h2>
+                <p class="text-xs text-slate-500 mt-1">记录并展示本月及历史关键美债波动事件。点击任意事件卡片上的“图表定位”，系统将自动调整图表区间，并在上方自动出具该事件的 5 日多因子归因报告。您也可在此添加/编辑大事记，导出配置保存至 events.json。</p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- 左侧：事件大事记时间轴 -->
+                <div class="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+                    <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                        <i data-lucide="clock" class="text-rose-500 h-4.5 w-4.5"></i>
+                        大事记时间轴 (Timeline)
+                    </h3>
+                    <div id="timeline-container" class="space-y-3 max-h-[380px] overflow-y-auto pr-2">
+                        <!-- 动态生成事件卡片 -->
+                    </div>
+                </div>
+
+                <!-- 右侧：事件编辑器与导出 -->
+                <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between space-y-4">
+                    <div class="space-y-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                            <i data-lucide="edit-3" class="text-accentBlue h-4.5 w-4.5"></i>
+                            添加 / 编辑大事记
+                        </h3>
+                        <div class="space-y-3 text-xs">
+                            <input type="hidden" id="edit-event-index" value="-1">
+                            <div>
+                                <label class="block text-slate-500 mb-1 font-semibold">事件日期:</label>
+                                <input type="date" id="event-date" class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-700">
+                            </div>
+                            <div>
+                                <label class="block text-slate-500 mb-1 font-semibold">事件标题:</label>
+                                <input type="text" id="event-title" placeholder="如：沃什Jackson Hole放鹰" class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-700">
+                            </div>
+                            <div>
+                                <label class="block text-slate-500 mb-1 font-semibold">事件描述与复盘:</label>
+                                <textarea id="event-desc" rows="3" placeholder="如：2Y收益率应声暴涨14bp，收益率曲线熊平..." class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-700 resize-none"></textarea>
+                            </div>
+                            <div class="flex gap-2 pt-1">
+                                <button onclick="saveEvent()" class="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 rounded text-xs transition shadow-sm">
+                                    保存事件
+                                </button>
+                                <button onclick="clearEventForm()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded text-xs border border-slate-200 transition">
+                                    清空
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="border-t border-slate-100 pt-3 space-y-2">
+                        <div class="flex justify-between items-center text-[10px] text-slate-400">
+                            <span>保存后复制下方 JSON 覆盖根目录 events.json:</span>
+                        </div>
+                        <textarea id="export-json-box" readonly class="w-full h-20 bg-slate-50 border border-slate-200 rounded p-2 text-[10px] font-mono text-slate-600 select-all focus:outline-none"></textarea>
+                        <button onclick="copyExportJson()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-1.5 rounded text-xs transition shadow-sm flex items-center justify-center gap-1">
+                            <i data-lucide="copy" class="h-3.5 w-3.5"></i> 复制 JSON 配置内容
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ==================== PART 1: 政策降息预期与中枢 ==================== -->
         <section class="space-y-4">
             <div class="border-l-4 border-accentBlue pl-3">
@@ -347,7 +423,7 @@
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
                         <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                             <i data-lucide="git-branch" class="text-accentBlue h-4.5 w-4.5"></i>
-                            图 3: 10Y名义美债收益率与各期限利差历史走势 (联动图2)
+                            图 3: 美债各期限利差历史走势 (与图2联动)
                         </h3>
                         <div class="flex items-center gap-1 text-[11px] text-slate-500">
                             <span>区间:</span>
@@ -357,6 +433,23 @@
                         </div>
                     </div>
                     <div id="chart-spreads" class="h-80 w-full"></div>
+                </div>
+
+                <!-- 图3-2：2Y(右轴) / 10Y / 30Y 国债名义收益率历史走势 -->
+                <div class="lg:col-span-2 bg-cardBg border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i data-lucide="line-chart" class="text-accentBlue h-4.5 w-4.5"></i>
+                            图 3-2: 2Y(右轴) / 10Y / 30Y 国债名义收益率历史走势 (与图2联动)
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+                            <span>区间:</span>
+                            <input type="date" id="start-yieldsNom" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                            <span>至</span>
+                            <input type="date" id="end-yieldsNom" class="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 w-24">
+                        </div>
+                    </div>
+                    <div id="chart-yields-nominal" class="h-80 w-full"></div>
                 </div>
             </div>
         </section>
@@ -563,6 +656,7 @@
         // 定义图例色号配色方案
         const CHART_COLORS = {
             nom10y: '#EF4444',      // 红色 (10Y名义)
+            nom30y: '#991B1B',      // 暗红色 (30Y名义)
             real10y: '#3B82F6',     // 蓝色 (TIPS实际)
             bei10y: '#10B981',      // 绿色 (BEI通胀预期)
             exp10y: '#F59E0B',      // 橙黄色 (预期期望利率)
@@ -607,9 +701,10 @@
         let playInterval = null;
         let isPlaying = false;
 
-        // 声明全部 10 个图表 ECharts 实例变量
+        // 声明全部 11 个图表 ECharts 实例变量
         let yieldCurveChart = null;     // 图2：曲线截面
         let spreadsChart = null;        // 图3：利差走势与水平
+        let yieldsNominalChart = null;  // 图3-2：2Y/10Y/30Y 名义利率走势
         let forwardsPathChart = null;   // 图4：远期预期路径
         let forwardsZscoreChart = null; // 图5：偏离度 Z-score
         let infDec5yChart = null;       // 图6：5Y通胀拆解
@@ -621,7 +716,7 @@
 
         // 映射图例 ID 以便做独立的日期筛选配置
         const chartIds = [
-            'futures', 'spreads', 'forwards', 'zscore', 
+            'futures', 'spreads', 'yieldsNom', 'forwards', 'zscore', 
             'inf5y', 'inf10y', 'anchor', 'risk', 'gold'
         ];
 
@@ -660,15 +755,21 @@
                 // 1. 卡片 1 (年底期货预期变动 DoDs/WoWs)
                 document.getElementById('metric-futures-change').innerHTML = getChangeHtml(latest.weighted_change_history_bp_dod, latest.weighted_change_history_bp_wow);
 
-                // 2. 卡片 2 (2Y & 10Y 名义收益率 + 利差变动)
+                // 2. 卡片 2 (2Y, 10Y, 30Y 名义收益率 + 利差变动)
                 metricNom10yEl.innerText = latest.dgs_10y ? latest.dgs_10y.toFixed(2) : '-';
                 document.getElementById('metric-nom-10y-change').innerHTML = getChangeHtml(latest.dgs_10y_dod, latest.dgs_10y_wow);
                 
                 document.getElementById('metric-nom-2y').innerText = latest.dgs_2y ? latest.dgs_2y.toFixed(2) : '-';
                 document.getElementById('metric-nom-2y-change').innerHTML = getChangeHtml(latest.dgs_2y_dod, latest.dgs_2y_wow);
                 
+                document.getElementById('metric-nom-30y').innerText = latest.dgs_30y ? latest.dgs_30y.toFixed(2) : '-';
+                document.getElementById('metric-nom-30y-change').innerHTML = getChangeHtml(latest.dgs_30y_dod, latest.dgs_30y_wow);
+                
                 document.getElementById('metric-spread-10y2y').innerText = latest.spread_10y_2y ? (latest.spread_10y_2y * 100).toFixed(0) + " bp" : '-';
                 document.getElementById('metric-spread-10y2y-change').innerHTML = getChangeHtml(latest.spread_10y_2y_dod, latest.spread_10y_2y_wow);
+                
+                document.getElementById('metric-spread-30y10y').innerText = latest.spread_30y_10y ? (latest.spread_30y_10y * 100).toFixed(0) + " bp" : '-';
+                document.getElementById('metric-spread-30y10y-change').innerHTML = getChangeHtml(latest.spread_30y_10y_dod, latest.spread_30y_10y_wow);
 
                 // 3. 卡片 3 (10Y 实际 TIPS & BEI 通胀预期 + 5Y5Y 锚变动)
                 metricReal10yEl.innerText = latest.real_10y ? latest.real_10y.toFixed(2) : '-';
@@ -724,6 +825,9 @@
 
                 // 首次全部渲染
                 initAllCharts();
+                
+                // 渲染大事记时间轴
+                renderTimeline();
                 
                 // 首次跑一下归因诊断计算
                 runAttribution();
@@ -863,11 +967,60 @@
             runAttribution();
         }
 
+        // 获取指定时间段内活跃的大事记标记线 (ECharts markLine)
+        function getMarkLinesForDates(dates) {
+            if (!window.chartData || !window.chartData.events) return null;
+            const activeEvents = window.chartData.events.filter(e => e.active && dates.includes(e.date));
+            if (activeEvents.length === 0) return null;
+            
+            return {
+                symbol: ['none', 'none'],
+                label: {
+                    show: true,
+                    position: 'end',
+                    formatter: (params) => {
+                        return params.name.length > 8 ? params.name.slice(0, 8) + '..' : params.name;
+                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#E2E8F0',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    padding: [3, 5],
+                    color: '#334155',
+                    fontSize: 9,
+                    shadowColor: 'rgba(0, 0, 0, 0.05)',
+                    shadowBlur: 3
+                },
+                lineStyle: {
+                    color: '#F43F5E',
+                    type: 'dashed',
+                    width: 1
+                },
+                data: activeEvents.map(e => ({
+                    xAxis: e.date,
+                    name: e.title,
+                    tooltip: {
+                        formatter: `<b>${e.date} - ${e.title}</b><br/>${e.description}`
+                    }
+                }))
+            };
+        }
+
         // 统一初始化 ECharts
         function initAllCharts() {
             // 通用白昼明亮模式配置项生成器 (已设定 scale: true 以保证缩放时Y轴能完美匹配动态区间)
             const getLightThemeOption = (yName, series, filteredHistory) => {
                 const dates = filteredHistory.map(r => r.Date_str);
+                // 自动追加不带名字的隐形 Dummy 系列来呈现大事记标记，防止图例点击隐藏折线时大事记标记也消失
+                const seriesCopy = [...series];
+                seriesCopy.push({
+                    type: 'line',
+                    data: dates.map(() => null),
+                    showSymbol: false,
+                    lineStyle: { opacity: 0 },
+                    tooltip: { show: false },
+                    markLine: getMarkLinesForDates(dates)
+                });
                 return {
                     backgroundColor: 'transparent',
                     tooltip: {
@@ -898,7 +1051,7 @@
                         splitLine: { lineStyle: { color: '#F1F5F9' } },
                         axisLabel: { color: '#64748B' }
                     },
-                    series: series
+                    series: seriesCopy
                 };
             };
 
@@ -925,7 +1078,15 @@
                 ],
                 series: [
                     { name: '当年12月FF加权预期变化 (bp)', type: 'line', data: historyArray.map(r => r.weighted_change_history_bp), itemStyle: { color: '#EC4899' }, showSymbol: false },
-                    { name: '美联储利率中枢 (%)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.fed_target_midpoint), itemStyle: { color: '#64748B' }, showSymbol: false, lineStyle: { type: 'dashed' } }
+                    { name: '美联储利率中枢 (%)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.fed_target_midpoint), itemStyle: { color: '#64748B' }, showSymbol: false, lineStyle: { type: 'dashed' } },
+                    {
+                        type: 'line',
+                        data: dates.map(() => null),
+                        showSymbol: false,
+                        lineStyle: { opacity: 0 },
+                        tooltip: { show: false },
+                        markLine: getMarkLinesForDates(dates)
+                    }
                 ]
             };
             futuresChangeChart.setOption(futuresOption);
@@ -937,12 +1098,46 @@
             // 3. 图表 3：利差走势图 (联动源)
             spreadsChart = echarts.init(document.getElementById('chart-spreads'));
             const spreadsOption = getLightThemeOption('%', [
-                { name: '10Y 名义利率', type: 'line', data: historyArray.map(r => r.dgs_10y), itemStyle: { color: CHART_COLORS.nom10y }, showSymbol: false },
                 { name: '10Y - 2Y 利差', type: 'line', data: historyArray.map(r => r.spread_10y_2y), itemStyle: { color: '#0EA5E9' }, showSymbol: false },
                 { name: '10Y - 3M 利差', type: 'line', data: historyArray.map(r => r.spread_10y_3m), itemStyle: { color: '#6366F1' }, showSymbol: false },
                 { name: '30Y - 10Y 利差', type: 'line', data: historyArray.map(r => r.spread_30y_10y), itemStyle: { color: '#EC4899' }, showSymbol: false }
             ], historyArray);
             spreadsChart.setOption(spreadsOption);
+
+            // 3-2. 图表 3-2：名义收益率对比走势 (联动源)
+            yieldsNominalChart = echarts.init(document.getElementById('chart-yields-nominal'));
+            const yieldsNomOption = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: '#CBD5E1',
+                    textStyle: { color: '#1E293B' },
+                    extraCssText: 'shadow-md border border-slate-200',
+                    axisPointer: { type: 'cross', label: { backgroundColor: '#64748B' } }
+                },
+                legend: { textStyle: { color: '#475569' } },
+                grid: { top: 40, bottom: 25, left: 45, right: 45 },
+                xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#94A3B8' } }, axisLabel: { color: '#64748B' } },
+                yAxis: [
+                    { type: 'value', name: '10Y / 30Y 收益率 (%)', scale: true, nameTextStyle: { color: '#64748B' }, splitLine: { lineStyle: { color: '#F1F5F9' } }, axisLabel: { color: '#64748B' } },
+                    { type: 'value', name: '2Y 收益率 (%)', scale: true, nameTextStyle: { color: '#1E88E5' }, splitLine: { show: false }, axisLabel: { color: '#1E88E5' } }
+                ],
+                series: [
+                    { name: '10Y 名义利率', type: 'line', data: historyArray.map(r => r.dgs_10y), itemStyle: { color: '#708090' }, showSymbol: false },
+                    { name: '30Y 名义利率', type: 'line', data: historyArray.map(r => r.dgs_30y), itemStyle: { color: '#F1B82D' }, showSymbol: false },
+                    { name: '2Y 国债收益率 (右轴)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.dgs_2y), itemStyle: { color: '#1E88E5' }, showSymbol: false },
+                    {
+                        type: 'line',
+                        data: dates.map(() => null),
+                        showSymbol: false,
+                        lineStyle: { opacity: 0 },
+                        tooltip: { show: false },
+                        markLine: getMarkLinesForDates(dates)
+                    }
+                ]
+            };
+            yieldsNominalChart.setOption(yieldsNomOption);
 
             // 4. 图表 4：远期利率走势图 (预期路径)
             forwardsPathChart = echarts.init(document.getElementById('chart-forwards-path'));
@@ -983,7 +1178,8 @@
                         type: 'line',
                         data: historyArray.map(r => r.fwd_deviation_zscore),
                         itemStyle: { color: CHART_COLORS.zscore },
-                        showSymbol: false
+                        showSymbol: false,
+                        markLine: getMarkLinesForDates(dates)
                     },
                     {
                         name: '全历史样本 Z-score (绝对极值偏离)',
@@ -1064,7 +1260,7 @@
                     { type: 'value', name: '期限溢价 TP (%)', scale: true, nameTextStyle: { color: '#64748B' }, splitLine: { show: false }, axisLabel: { color: '#64748B' } }
                 ],
                 series: [
-                    { name: '10Y零息名义利率 (THREEFY10)', type: 'line', data: historyArray.map(r => r.acm_nom_10y), itemStyle: { color: '#94A3B8' }, showSymbol: false, lineStyle: { type: 'dashed', width: 1.5 } },
+                    { name: '10Y零息名义利率 (THREEFY10)', type: 'line', data: historyArray.map(r => r.acm_nom_10y), itemStyle: { color: '#94A3B8' }, showSymbol: false, lineStyle: { type: 'dashed', width: 1.5 }, markLine: getMarkLinesForDates(dates) },
                     { name: '10Y 期望短期利率 (Expected Rate)', type: 'line', data: historyArray.map(r => r.acm_exp_10y), itemStyle: { color: CHART_COLORS.exp10y }, showSymbol: false, lineStyle: { width: 2.5 } },
                     { name: '10Y ACM 期限溢价 (Term Premium)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.acm_tp_10y), itemStyle: { color: CHART_COLORS.tp10y }, showSymbol: false, lineStyle: { width: 2.5 } }
                 ]
@@ -1122,7 +1318,15 @@
                 series: [
                     { name: '10Y ACM 期限溢价 (长端动力-左轴)', type: 'line', yAxisIndex: 0, data: historyArray.map(r => r.acm_tp_10y), itemStyle: { color: CHART_COLORS.tp10y }, showSymbol: false, lineStyle: { width: 2 } },
                     { name: '2Y 国债收益率 (短端动力-右轴1-逆序)', type: 'line', yAxisIndex: 2, data: historyArray.map(r => r.dgs_2y), itemStyle: { color: '#0EA5E9' }, showSymbol: false, lineStyle: { width: 2 } },
-                    { name: '伦敦现货黄金价格 (右轴0)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.gold_price), itemStyle: { color: CHART_COLORS.gold }, showSymbol: false, lineStyle: { width: 2.5 } }
+                    { name: '伦敦现货黄金价格 (右轴0)', type: 'line', yAxisIndex: 1, data: historyArray.map(r => r.gold_price), itemStyle: { color: CHART_COLORS.gold }, showSymbol: false, lineStyle: { width: 2.5 } },
+                    {
+                        type: 'line',
+                        data: dates.map(() => null),
+                        showSymbol: false,
+                        lineStyle: { opacity: 0 },
+                        tooltip: { show: false },
+                        markLine: getMarkLinesForDates(dates)
+                    }
                 ],
                 dataZoom: [
                     { type: 'inside', start: 90, end: 100 },
@@ -1135,6 +1339,7 @@
             window.addEventListener('resize', () => {
                 yieldCurveChart.resize();
                 spreadsChart.resize();
+                yieldsNominalChart.resize();
                 forwardsPathChart.resize();
                 forwardsZscoreChart.resize();
                 infDec5yChart.resize();
@@ -1229,6 +1434,26 @@
                 }
             });
 
+            // 图表 3-2 悬停联动刷新图 2 截面
+            yieldsNominalChart.on('updateAxisPointer', function (params) {
+                if (params.axesInfo && params.axesInfo.length > 0) {
+                    const dataIndex = params.dataIndex;
+                    if (dataIndex !== undefined && dataIndex !== null) {
+                        if (!isPlaying) {
+                            const currentXData = yieldsNominalChart.getOption().xAxis[0].data;
+                            if (currentXData && currentXData[dataIndex]) {
+                                const targetDate = currentXData[dataIndex];
+                                const mainIndex = historyArray.findIndex(r => r.Date_str === targetDate);
+                                if (mainIndex !== -1) {
+                                    sliderTimeTravel.value = mainIndex;
+                                    updateYieldCurveSnapshot(mainIndex);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
             // 2. 旅行滑块拉动
             sliderTimeTravel.addEventListener('input', (e) => {
                 const idx = parseInt(e.target.value);
@@ -1288,6 +1513,18 @@
             }
             
             const localDates = subset.map(r => r.Date_str);
+            const markLineObj = getMarkLinesForDates(localDates);
+            
+            // 独立大事记 Dummy 系列定义 (防止隐藏指标线导致标记隐藏)
+            const dummySeries = {
+                type: 'line',
+                data: localDates.map(() => null),
+                showSymbol: false,
+                lineStyle: { opacity: 0 },
+                tooltip: { show: false },
+                markLine: markLineObj
+            };
+            
             let chartInstance = null;
             let seriesConfig = [];
             
@@ -1297,7 +1534,8 @@
                     xAxis: { data: localDates },
                     series: [
                         { data: subset.map(r => r.weighted_change_history_bp) },
-                        { data: subset.map(r => r.fed_target_midpoint) }
+                        { data: subset.map(r => r.fed_target_midpoint) },
+                        dummySeries
                     ]
                 });
                 return;
@@ -1305,10 +1543,17 @@
             else if (chartId === 'spreads') {
                 chartInstance = spreadsChart;
                 seriesConfig = [
-                    { data: subset.map(r => r.dgs_10y) },
                     { data: subset.map(r => r.spread_10y_2y) },
                     { data: subset.map(r => r.spread_10y_3m) },
                     { data: subset.map(r => r.spread_30y_10y) }
+                ];
+            } 
+            else if (chartId === 'yieldsNom') {
+                chartInstance = yieldsNominalChart;
+                seriesConfig = [
+                    { data: subset.map(r => r.dgs_10y) },
+                    { data: subset.map(r => r.dgs_30y) },
+                    { data: subset.map(r => r.dgs_2y) }
                 ];
             } 
             else if (chartId === 'forwards') {
@@ -1365,13 +1610,16 @@
                     series: [
                         { data: subset.map(r => r.acm_tp_10y) },
                         { data: subset.map(r => r.dgs_2y) },
-                        { data: subset.map(r => r.gold_price) }
+                        { data: subset.map(r => r.gold_price) },
+                        dummySeries
                     ]
                 });
                 return;
             }
             
             if (chartInstance) {
+                // 追加隐藏的 dummySeries 用来单独渲染大事记标记
+                seriesConfig.push(dummySeries);
                 chartInstance.setOption({
                     xAxis: { data: localDates },
                     series: seriesConfig
@@ -1416,6 +1664,148 @@
             clearInterval(playInterval);
         }
 
+        // ==================== 大事记时间轴与标记工具交互逻辑 ====================
+        function renderTimeline() {
+            const container = document.getElementById('timeline-container');
+            if (!container || !window.chartData || !window.chartData.events) return;
+            
+            // 降序排列：最新事件排在最前
+            const sortedEvents = [...window.chartData.events].sort((a, b) => b.date.localeCompare(a.date));
+            
+            if (sortedEvents.length === 0) {
+                container.innerHTML = `<div class="text-center text-slate-400 py-8 text-xs">暂无大事记。您可以在右侧表单添加新事件。</div>`;
+                return;
+            }
+            
+            container.innerHTML = sortedEvents.map(e => {
+                const origIndex = window.chartData.events.findIndex(orig => orig.date === e.date && orig.title === e.title);
+                const isChecked = e.active ? 'checked' : '';
+                return `
+                    <div class="border border-slate-100 bg-slate-50 hover:bg-slate-100/75 rounded-lg p-3.5 transition flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                        <div class="space-y-1.5 flex-1">
+                            <div class="flex items-center gap-2.5">
+                                <input type="checkbox" ${isChecked} onchange="toggleEventVisibility('${e.date}', this.checked)" class="h-4 w-4 text-rose-500 rounded border-slate-300 focus:ring-rose-500 cursor-pointer">
+                                <span class="bg-rose-100 text-rose-700 font-bold font-mono px-2 py-0.5 rounded text-[10px] shadow-2xs">${e.date}</span>
+                                <h4 class="font-extrabold text-slate-800 text-[13px]">${e.title}</h4>
+                            </div>
+                            <p class="text-slate-600 text-[11px] leading-relaxed pl-6">${e.description}</p>
+                        </div>
+                        <div class="flex items-center gap-2 self-end md:self-center">
+                            <button onclick="editEvent(${origIndex})" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2.5 py-1.5 rounded transition text-[10px]">
+                                编辑
+                            </button>
+                            <button onclick="deleteEvent(${origIndex})" class="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition">
+                                <i data-lucide="trash-2" class="h-4 w-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // 实时列出纯净的配置 JSON 导出内容（去掉 active 字段）
+            const cleanEvents = window.chartData.events.map(ev => {
+                const { active, ...rest } = ev;
+                return rest;
+            });
+            document.getElementById('export-json-box').value = JSON.stringify(cleanEvents, null, 4);
+            // 渲染动态生成的图标
+            lucide.createIcons();
+        }
+
+        function toggleEventVisibility(dateStr, isVisible) {
+            const event = window.chartData.events.find(e => e.date === dateStr);
+            if (event) {
+                event.active = isVisible;
+                refreshAllChartAnnotations();
+                
+                // 同步更新导出配置的 JSON 文本
+                const cleanEvents = window.chartData.events.map(ev => {
+                    const { active, ...rest } = ev;
+                    return rest;
+                });
+                document.getElementById('export-json-box').value = JSON.stringify(cleanEvents, null, 4);
+            }
+        }
+
+        function editEvent(index) {
+            const e = window.chartData.events[index];
+            document.getElementById('edit-event-index').value = index;
+            document.getElementById('event-date').value = e.date;
+            document.getElementById('event-title').value = e.title;
+            document.getElementById('event-desc').value = e.description;
+        }
+
+        function saveEvent() {
+            const index = parseInt(document.getElementById('edit-event-index').value);
+            const date = document.getElementById('event-date').value;
+            const title = document.getElementById('event-title').value.trim();
+            const desc = document.getElementById('event-desc').value.trim();
+            
+            if (!date || !title) {
+                alert("请输入事件日期与标题！");
+                return;
+            }
+            
+            const eventObj = { date: date, title: title, description: desc };
+            
+            if (index === -1) {
+                // 新建事件，检查日期冲突
+                const existingIdx = window.chartData.events.findIndex(e => e.date === date);
+                if (existingIdx !== -1) {
+                    if (confirm(`该日期 ${date} 已有事件“${window.chartData.events[existingIdx].title}”，是否进行覆盖？`)) {
+                        eventObj.active = window.chartData.events[existingIdx].active;
+                        window.chartData.events[existingIdx] = eventObj;
+                    } else {
+                        return;
+                    }
+                } else {
+                    eventObj.active = false; // 新件默认不显示
+                    window.chartData.events.push(eventObj);
+                }
+            } else {
+                // 更新现有事件
+                eventObj.active = window.chartData.events[index].active;
+                window.chartData.events[index] = eventObj;
+            }
+            
+            clearEventForm();
+            renderTimeline();
+            refreshAllChartAnnotations();
+        }
+
+        function deleteEvent(index) {
+            if (confirm("确定要删除这个大事记标记吗？")) {
+                window.chartData.events.splice(index, 1);
+                clearEventForm();
+                renderTimeline();
+                refreshAllChartAnnotations();
+            }
+        }
+
+        function clearEventForm() {
+            document.getElementById('edit-event-index').value = "-1";
+            document.getElementById('event-date').value = "";
+            document.getElementById('event-title').value = "";
+            document.getElementById('event-desc').value = "";
+        }
+
+        function copyExportJson() {
+            const box = document.getElementById('export-json-box');
+            box.select();
+            document.execCommand('copy');
+            alert("JSON 大事记配置内容已成功复制到剪贴板！\n请打开项目根目录下的 events.json 文件并粘贴覆盖，然后运行 update_data.bat 重新加载以永久存盘。");
+        }
+
+        function refreshAllChartAnnotations() {
+            chartIds.forEach(id => {
+                const startInput = document.getElementById(`start-${id}`);
+                const endInput = document.getElementById(`end-${id}`);
+                if (startInput && endInput) {
+                    updateSingleChartRange(id, startInput.value, endInput.value);
+                }
+            });
+        }
+
         // ===== 开发者与自定义配置区 =====
         function createLineChart(containerId, title, seriesNames, dataKeys, yAxisLabel = '%') {
             const container = document.getElementById(containerId);
@@ -1427,7 +1817,8 @@
                 name: name,
                 type: 'line',
                 data: historyArray.map(r => r[dataKeys[i]]),
-                showSymbol: false
+                showSymbol: false,
+                markLine: getMarkLinesForDates(dates)
             }));
             
             const option = {

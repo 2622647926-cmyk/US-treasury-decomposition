@@ -39,30 +39,33 @@ OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_JS_PATH = os.path.join(OUTPUT_DIR, "data.js")
 
 def get_fred_csv(series_id):
-    """从 FRED 官方 API 下载指定数据系列的 CSV 文件并转换为 DataFrame"""
+    """从 FRED 官方 API 下载指定数据系列的 CSV 文件并转换为 DataFrame (带重试机制)"""
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
     print(f"  正在下载 FRED 数据系列: {series_id}...")
-    try:
-        response = requests.get(url, timeout=15)
-        if response.status_code == 200:
-            lines = response.content.decode('utf-8').split('\n')
-            data = []
-            for line in lines[1:]:
-                parts = line.strip().split(',')
-                if len(parts) == 2:
-                    date_str, val_str = parts
-                    if val_str != '.':
-                        try:
-                            data.append({'Date': date_str, series_id: float(val_str)})
-                        except ValueError:
-                            pass
-            return pd.DataFrame(data)
-        else:
-            print(f"  [警告] 下载失败 {series_id}，HTTP 状态码: {response.status_code}")
-            return pd.DataFrame(columns=['Date', series_id])
-    except Exception as e:
-        print(f"  [警告] 下载 {series_id} 时出现异常: {e}")
-        return pd.DataFrame(columns=['Date', series_id])
+    import time
+    for attempt in range(4):
+        try:
+            response = requests.get(url, timeout=15)
+            if response.status_code == 200:
+                lines = response.content.decode('utf-8').split('\n')
+                data = []
+                for line in lines[1:]:
+                    parts = line.strip().split(',')
+                    if len(parts) == 2:
+                        date_str, val_str = parts
+                        if val_str != '.':
+                            try:
+                                data.append({'Date': date_str, series_id: float(val_str)})
+                            except ValueError:
+                                pass
+                return pd.DataFrame(data)
+            else:
+                print(f"  [警告] 下载 {series_id} 失败，HTTP 状态码: {response.status_code} (尝试 {attempt+1}/4)")
+        except Exception as e:
+            print(f"  [警告] 下载 {series_id} 出现异常: {e} (尝试 {attempt+1}/4)")
+        if attempt < 3:
+            time.sleep(2)
+    return pd.DataFrame(columns=['Date', series_id])
 
 def fetch_acm_term_premium_ny_fed():
     """从纽约联储官网直接下载并解析 ACM 期限溢价模型日频 Excel 数据 (解决 FRED 没有 ACM 模型的问题)"""
@@ -224,8 +227,14 @@ def calculate_derivatives(df):
     df['dgs_10y_dod'] = (df['dgs_10y'] - df['dgs_10y'].shift(1)) * 100
     df['dgs_10y_wow'] = (df['dgs_10y'] - df['dgs_10y'].shift(5)) * 100
     
+    df['dgs_30y_dod'] = (df['dgs_30y'] - df['dgs_30y'].shift(1)) * 100
+    df['dgs_30y_wow'] = (df['dgs_30y'] - df['dgs_30y'].shift(5)) * 100
+    
     df['spread_10y_2y_dod'] = (df['spread_10y_2y'] - df['spread_10y_2y'].shift(1)) * 100
     df['spread_10y_2y_wow'] = (df['spread_10y_2y'] - df['spread_10y_2y'].shift(5)) * 100
+    
+    df['spread_30y_10y_dod'] = (df['spread_30y_10y'] - df['spread_30y_10y'].shift(1)) * 100
+    df['spread_30y_10y_wow'] = (df['spread_30y_10y'] - df['spread_30y_10y'].shift(5)) * 100
     
     df['real_10y_dod'] = (df['real_10y'] - df['real_10y'].shift(1)) * 100
     df['real_10y_wow'] = (df['real_10y'] - df['real_10y'].shift(5)) * 100
@@ -288,6 +297,13 @@ def main():
     for df_next in dfs[1:]:
         merged_df = pd.merge(merged_df, df_next, on='Date', how='outer')
         
+    # 检查是否所有必需的数据列都已成功合并
+    missing_keys = [key for key in SERIES_IDS.keys() if key not in merged_df.columns]
+    if missing_keys:
+        print(f"\n[错误] 缺失以下必需的 FRED 数据列: {missing_keys}")
+        print("这通常是因为网络超时或被 FRED API 屏蔽导致下载失败。请检查您的网络连接或代理，然后重新尝试运行。")
+        sys.exit(1)
+        
     merged_df['Date'] = pd.to_datetime(merged_df['Date'])
     merged_df = merged_df.sort_values('Date').reset_index(drop=True)
     
@@ -322,12 +338,57 @@ def main():
     
     # 处理 pandas 计算中可能引入 of np.inf (正无穷) 和 -np.inf (负无穷)，均转换为 NaN
     merged_df = merged_df.replace([np.inf, -np.inf], np.nan)
-    # 将所有的 NaN 转换为 Python 的 None
+    # 将所有的 NaN 转换为 Python 的 None (避免 JSON 编码出 JS 无法解析的 NaN)
     merged_df = merged_df.where(pd.notnull(merged_df), None)
-    
     # 将 DataFrame 转换为字典数组结构
     history_data = merged_df.to_dict(orient='records')
     
+    # 10. 加载或初始化 events.json 大事记
+    events_json_path = os.path.join(OUTPUT_DIR, "events.json")
+    default_events = [
+        {
+            "date": "2026-08-07",
+            "title": "非农利好交易弱增长",
+            "description": "非农就业人数录得-2.3万，较市场预期疲软，带动 TIPS 实际利率与盈亏平衡通胀率(BEI)同跌，市场主导交易“弱增长”逻辑。"
+        },
+        {
+            "date": "2026-08-13",
+            "title": "30Y国债拍卖供给冲击",
+            "description": "财政部30年期名义国债拍卖得标利率录得5.216%，创2001年以来最高水平，引发美债期限溢价跳升与供给冲击担忧。"
+        },
+        {
+            "date": "2026-08-19",
+            "title": "贝森特翻倍回购计划",
+            "description": "贝森特宣布将财政部每期国债回购规模翻倍至至少40亿美元。30Y名义收益率单日应声回落9bp，但随后两天全部回吐；通胀补偿反升至2.34%，期限溢价升至0.868%，回购净效果为负。"
+        },
+        {
+            "date": "2026-08-26",
+            "title": "PCE物价指数符合预期",
+            "description": "7月PCE基本符合市场预期，核心通胀压力缓解，通胀补偿平稳，带动长端美债收益率下行。"
+        },
+        {
+            "date": "2026-08-28",
+            "title": "沃什Jackson Hole放鹰",
+            "description": "沃什在Jackson Hole研讨会释放强硬偏鹰派言论。短端2Y收益率应声跳升14bp，长端波澜不惊，收益率曲线熊平8bp（2s10s降至39bp）；9月加息概率由35%拉升至约60%。"
+        }
+    ]
+    
+    events_data = default_events
+    if os.path.exists(events_json_path):
+        try:
+            with open(events_json_path, "r", encoding="utf-8") as f:
+                events_data = json.load(f)
+            print(f"  成功载入本地 events.json，共包含 {len(events_data)} 个事件标记。")
+        except Exception as e:
+            print(f"  [警告] 解析本地 events.json 失败: {e}，将使用默认事件。")
+    else:
+        try:
+            with open(events_json_path, "w", encoding="utf-8") as f:
+                json.dump(default_events, f, indent=4, ensure_ascii=False)
+            print(f"  本地 events.json 不存在，已初始化生成并写入 {len(default_events)} 个默认事件。")
+        except Exception as e:
+            print(f"  [警告] 写入 events.json 失败: {e}")
+
     # 构造最终写入本地 json 的总体层级结构 (使用 UTC+8 北京时间，以便在 GitHub Actions 云端运行时显示正确的国内时间)
     beijing_time = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     final_output = {
@@ -337,6 +398,7 @@ def main():
         "futures_price": latest_futures_price,
         "implied_rate": latest_implied_rate,
         "weighted_change_bp": round(latest_weighted_change_bp, 2),
+        "events": events_data,
         "history": history_data
     }
     
