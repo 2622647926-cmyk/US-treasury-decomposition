@@ -1,5 +1,5 @@
 window.chartData = {
-    "update_time": "2026-11-26 12:14:15",
+    "update_time": "2026-11-27 12:23:08",
     "target_midpoint": 3.875,
     "futures_contract": "ZQZ26.CBT",
     "futures_price": 95.94000244140625,
